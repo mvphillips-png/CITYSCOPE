@@ -514,7 +514,7 @@ async function snapshot(){
 
   try{
     await new Promise(r=>setTimeout(r,140));
-    const opt={scale:2,backgroundColor:'#04060a',useCORS:true,logging:false};
+    const opt={scale:1.75,backgroundColor:'#04060a',useCORS:true,logging:false};
     const coverCanvas=await html2canvas(cover,opt);
     const blocks=[];
     for(const c of Array.from(bodyWrap.children)){
@@ -524,7 +524,8 @@ async function snapshot(){
     }
 
     const {jsPDF}=window.jspdf;
-    const pdf=new jsPDF({unit:'px',format:'letter'});
+    const pdf=new jsPDF({unit:'px',format:'letter',compress:true});
+    const JPEG=0.8;
     const PW=pdf.internal.pageSize.getWidth();
     const PH=pdf.internal.pageSize.getHeight();
     const M=40, CW=PW-2*M, GAP=14;
@@ -534,7 +535,7 @@ async function snapshot(){
     fill();
     { const dh=Math.min(CW*(coverCanvas.height/coverCanvas.width),PH-2*M);
       const y=Math.max(M,(PH-dh)/2);
-      pdf.addImage(coverCanvas.toDataURL('image/png'),'PNG',M,y,CW,dh); }
+      pdf.addImage(coverCanvas.toDataURL('image/jpeg',JPEG),'JPEG',M,y,CW,dh); }
 
     // Body pages
     pdf.addPage(); fill(); let y=M;
@@ -542,7 +543,7 @@ async function snapshot(){
       const dh=CW*(canvas.height/canvas.width);
       if(dh<=PH-2*M){
         if(y+dh>PH-M){ pdf.addPage(); fill(); y=M; }
-        pdf.addImage(canvas.toDataURL('image/png'),'PNG',M,y,CW,dh); y+=dh+GAP;
+        pdf.addImage(canvas.toDataURL('image/jpeg',JPEG),'JPEG',M,y,CW,dh); y+=dh+GAP;
       } else {
         if(y>M){ pdf.addPage(); fill(); y=M; }
         const scale=CW/canvas.width;
@@ -555,7 +556,7 @@ async function snapshot(){
           g.drawImage(canvas,0,sy,canvas.width,hSrc,0,0,canvas.width,hSrc);
           const dhc=CW*(hSrc/canvas.width);
           if(y+dhc>PH-M && y>M){ pdf.addPage(); fill(); y=M; }
-          pdf.addImage(tmp.toDataURL('image/png'),'PNG',M,y,CW,dhc); y+=dhc+GAP;
+          pdf.addImage(tmp.toDataURL('image/jpeg',JPEG),'JPEG',M,y,CW,dhc); y+=dhc+GAP;
           sy+=hSrc;
         }
       }
