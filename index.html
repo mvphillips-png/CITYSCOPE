@@ -191,8 +191,7 @@
       <label for="depth">Depth</label>
       <select id="depth">
         <option value="lite">Lite &middot; names only (cheapest, ~800 tokens)</option>
-        <option value="fast">Fast &middot; scored kit (model knowledge)</option>
-        <option value="deep">Deep &middot; web-verified (slower, best for small towns)</option>
+        <option value="fast">Fast &middot; scored kit + research list</option>
       </select>
     </div>
 
@@ -288,10 +287,13 @@ Return the CURATED strongest ingredients, capped per section. Respond with ONLY 
   "patterns": "local patterns or textures for fills & backgrounds, 1-2 sentences",
   "map_route": "one illustrated-map route idea for this city",
   "poster": "one poster composition idea",
-  "cover": "one city-guide cover idea"
+  "cover": "one city-guide cover idea",
+  "verify": [{"what":"the specific claim or detail in THIS kit you're least sure is true / current","where":"the concrete place a human should check it — e.g. the city's own site, the local paper, a local subreddit/Facebook group, the historical society, Google Street View for signage"}]
 }
 
-CAPS: hero up to 5, icons up to 10, weird up to 5, people up to 5, nature up to 5, map up to 5, lettering up to 5, jokes up to 3, eastereggs up to 3, palette 5-6.`;
+SELF-AUDIT for "verify": since you have no live web access, end by flagging the 3-5 items in the kit above that are MOST likely to be wrong, outdated, or that you're guessing at for this specific city — a business that may have closed, a festival that may not exist, a "fact" you're not certain of, or anything you'd want a local to confirm. Be honest about your own soft spots rather than listing generic research advice. If you're genuinely confident about everything, still name the 3 details most worth a human's spot-check.
+
+CAPS: hero up to 5, icons up to 10, weird up to 5, people up to 5, nature up to 5, map up to 5, lettering up to 5, jokes up to 3, eastereggs up to 3, palette 5-6, verify 3-5.`;
 
 const LITE_INSTRUCTION = `You are CITYSCOPE, a scout for an illustrator building a city guide. Find the specific, drawable things that make this place unmistakable — not a tourist list. Reject generic: "a courthouse" is nothing; "the 1911 copper-domed courthouse locals use for directions" is an ingredient. Chase the one "only here" detail hardest. Only assert specifics you're confident are true; if unsure, lean on genuinely characteristic regional details rather than inventing landmarks.
 
@@ -319,22 +321,17 @@ async function run(){
 
   lastCity = city;
 
-  const mode = depthEl.value;              // 'lite' | 'fast' | 'deep'
-  const deep = mode==='deep';
-  const lite = mode==='lite';
-  let task = (lite ? LITE_INSTRUCTION : INSTRUCTION) + `\n\nCITY: ${city}`;
-  if(deep) task += `\n\nUse web search to VERIFY the specific landmarks, foods, people, festivals and oddities before listing them, and prefer verified real details over guesses. Then return only the JSON.`;
-
-  const body={ model:MODEL, max_tokens: lite?900:8000, messages:[{role:'user',content:task}] };
-  if(deep) body.tools=[{type:'web_search_20250305',name:'web_search'}];
+  const lite = depthEl.value==='lite';
 
   try{
+    const task = (lite ? LITE_INSTRUCTION : INSTRUCTION) + `\n\nCITY: ${city}`;
+    const body={ model:MODEL, max_tokens: lite?900:8000, messages:[{role:'user',content:task}] };
     const res=await fetch(WORKER,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!res.ok) throw new Error('Worker returned '+res.status);
     const data=await res.json();
     const raw=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n').trim();
     const parsed=parseJSON(raw);
-    if(!parsed) throw new Error('Could not parse the response — try Fast mode or run again.');
+    if(!parsed) throw new Error('Could not parse the response — try again.');
     render(parsed);
     setStatus('');
   }catch(err){
@@ -444,6 +441,12 @@ function bodyHTML(d){
       ${d.poster?`<div class="comp"><div class="ct">Poster</div><div class="cv">${esc(d.poster)}</div></div>`:''}
       ${d.cover?`<div class="comp"><div class="ct">Guide cover</div><div class="cv">${esc(d.cover)}</div></div>`:''}
     </div></div>`;
+  }
+
+  // Go verify — model's own soft spots to hand-check
+  const vf=(d.verify||[]).map(x=>typeof x==='string'?{what:x}:x).filter(x=>x&&x.what).slice(0,5);
+  if(vf.length){
+    h+=`<div class="sec a-magenta verifyblk"><div class="sh"><span class="sn">Go verify</span><span class="sc">built from model memory · spot-check before you draw</span></div>${vf.map(x=>`<div class="item"><div class="nm">${esc(x.what)}</div>${x.where?`<div class="ds"><span style="font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--magenta)">check &rsaquo;</span> ${esc(x.where)}</div>`:''}</div>`).join('')}</div>`;
   }
   return h;
 }
