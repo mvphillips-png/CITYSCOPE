@@ -453,7 +453,7 @@ function render(d){
   let html=bodyHTML(d);
   html+=`<div class="controls">
     <button class="btn-again" id="again">&#8635; Run again</button>
-    <button class="btn-snap" id="snap">&#11015; Snapshot PDF</button>
+    <button class="btn-snap" id="snap">&#11015; Export PDF</button>
     <button class="btn-new" id="fresh">&#10005; New city</button>
   </div>`;
   outEl.innerHTML=html;
@@ -477,26 +477,100 @@ function render(d){
 function stamp(){const p=n=>String(n).padStart(2,'0');const t=new Date();return `${t.getFullYear()}-${p(t.getMonth()+1)}-${p(t.getDate())}-${p(t.getHours())}${p(t.getMinutes())}`;}
 function prettyStamp(){return new Date().toLocaleString([],{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
 
+function coverNodeHTML(d){
+  return `<div style="width:736px;background:#04060a;padding:74px 48px;box-sizing:border-box;font-family:var(--body);color:var(--text);
+      background-image:linear-gradient(rgba(0,229,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,.05) 1px,transparent 1px);background-size:44px 44px;">
+    <div style="font-family:var(--mono);font-size:12px;letter-spacing:.34em;color:var(--cyan);text-transform:uppercase;">GF · Field Instrument</div>
+    <div style="font-family:var(--head);font-weight:900;font-size:74px;letter-spacing:.05em;color:#eaf6ff;text-shadow:0 0 22px rgba(0,229,255,.3);margin:10px 0 2px;">CITYSCOPE</div>
+    <div style="height:1px;background:var(--line);margin:22px 0;"></div>
+    <div style="font-family:var(--head);font-weight:700;font-size:30px;color:#eaf6ff;line-height:1.25;">${esc(d.city||lastCity)}</div>
+    <div style="font-family:var(--head);font-weight:700;font-size:17px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);margin-top:6px;">Illustration Kit</div>
+    <div style="font-family:var(--mono);font-size:12px;letter-spacing:.16em;color:var(--muted);text-transform:uppercase;margin-top:14px;">${esc(prettyStamp())}</div>
+    ${d.read?`<div style="font-size:17px;line-height:1.6;color:var(--text);margin-top:34px;max-width:560px;">${esc(d.read)}</div>`:''}
+    ${d.only_here?`<div style="background:linear-gradient(180deg,rgba(255,47,208,.1),rgba(0,229,255,.05));border:1px solid rgba(255,47,208,.4);border-left:3px solid var(--magenta);border-radius:4px;padding:16px 18px;margin-top:26px;">
+        <div style="font-family:var(--mono);font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--magenta);margin-bottom:7px;">Only here</div>
+        <div style="font-size:17px;line-height:1.5;color:#f2f8ff;">${esc(d.only_here)}</div></div>`:''}
+  </div>`;
+}
+
 async function snapshot(){
   if(!lastData) return;
   const btn=$('snap');
   const haveLibs=(typeof html2canvas!=='undefined')&&window.jspdf&&window.jspdf.jsPDF;
   if(!haveLibs){ window.print(); return; }
-  const old=btn.textContent; btn.disabled=true; btn.textContent='… building';
-  const node=document.createElement('div'); node.id='snapshot';
-  node.innerHTML=`<div class="snaphead"><div><div class="snaptag">GF · Field Instrument</div><div class="snaptitle">CITYSCOPE</div></div><div class="snapmeta">${esc(prettyStamp())}</div></div>${bodyHTML(lastData)}<div class="snapfoot">Quirky Flash Chronicles · Gravificer System</div>`;
-  document.body.appendChild(node);
+  const old=btn.textContent; btn.disabled=true; btn.textContent='… building PDF';
+  if(document.fonts&&document.fonts.ready){ try{ await document.fonts.ready; }catch(e){} }
+
+  const host=document.createElement('div');
+  host.style.cssText='position:absolute;left:-99999px;top:0;width:736px;background:#04060a;';
+  host.innerHTML=coverNodeHTML(lastData)+'<div id="bodyblocks">'+bodyHTML(lastData)+'</div>';
+  document.body.appendChild(host);
+  const cover=host.firstElementChild;
+  const bodyWrap=host.querySelector('#bodyblocks');
+  Array.from(bodyWrap.children).forEach(c=>{ c.style.marginBottom='0'; });
+
   try{
-    await new Promise(r=>setTimeout(r,90));
-    const canvas=await html2canvas(node,{scale:2,backgroundColor:'#04060a',useCORS:true,logging:false});
-    const img=canvas.toDataURL('image/png');
-    const w=canvas.width/2,h=canvas.height/2;
+    await new Promise(r=>setTimeout(r,140));
+    const opt={scale:2,backgroundColor:'#04060a',useCORS:true,logging:false};
+    const coverCanvas=await html2canvas(cover,opt);
+    const blocks=[];
+    for(const c of Array.from(bodyWrap.children)){
+      if(c.classList.contains('kithead')||c.classList.contains('onlyhere')) continue; // already on cover
+      if(c.offsetHeight<4) continue;
+      blocks.push(await html2canvas(c,opt));
+    }
+
     const {jsPDF}=window.jspdf;
-    const pdf=new jsPDF({orientation:h>=w?'p':'l',unit:'px',format:[w,h]});
-    pdf.addImage(img,'PNG',0,0,w,h);
+    const pdf=new jsPDF({unit:'px',format:'letter'});
+    const PW=pdf.internal.pageSize.getWidth();
+    const PH=pdf.internal.pageSize.getHeight();
+    const M=40, CW=PW-2*M, GAP=14;
+    const fill=()=>{ pdf.setFillColor(4,6,10); pdf.rect(0,0,PW,PH,'F'); };
+
+    // Page 1 — cover
+    fill();
+    { const dh=Math.min(CW*(coverCanvas.height/coverCanvas.width),PH-2*M);
+      const y=Math.max(M,(PH-dh)/2);
+      pdf.addImage(coverCanvas.toDataURL('image/png'),'PNG',M,y,CW,dh); }
+
+    // Body pages
+    pdf.addPage(); fill(); let y=M;
+    const place=(canvas)=>{
+      const dh=CW*(canvas.height/canvas.width);
+      if(dh<=PH-2*M){
+        if(y+dh>PH-M){ pdf.addPage(); fill(); y=M; }
+        pdf.addImage(canvas.toDataURL('image/png'),'PNG',M,y,CW,dh); y+=dh+GAP;
+      } else {
+        if(y>M){ pdf.addPage(); fill(); y=M; }
+        const scale=CW/canvas.width;
+        const chunkSrcH=Math.floor((PH-2*M)/scale);
+        let sy=0;
+        while(sy<canvas.height){
+          const hSrc=Math.min(chunkSrcH,canvas.height-sy);
+          const tmp=document.createElement('canvas'); tmp.width=canvas.width; tmp.height=hSrc;
+          const g=tmp.getContext('2d'); g.fillStyle='#04060a'; g.fillRect(0,0,tmp.width,tmp.height);
+          g.drawImage(canvas,0,sy,canvas.width,hSrc,0,0,canvas.width,hSrc);
+          const dhc=CW*(hSrc/canvas.width);
+          if(y+dhc>PH-M && y>M){ pdf.addPage(); fill(); y=M; }
+          pdf.addImage(tmp.toDataURL('image/png'),'PNG',M,y,CW,dhc); y+=dhc+GAP;
+          sy+=hSrc;
+        }
+      }
+    };
+    blocks.forEach(place);
+
+    // Footers
+    const total=pdf.getNumberOfPages();
+    for(let p=1;p<=total;p++){
+      pdf.setPage(p);
+      pdf.setFont('helvetica','normal'); pdf.setFontSize(7); pdf.setTextColor(95,112,130);
+      pdf.text('QUIRKY FLASH CHRONICLES · GRAVIFICER SYSTEM',M,PH-16);
+      pdf.text('p '+p+' / '+total,PW-M,PH-16,{align:'right'});
+    }
+
     pdf.save('cityscope-'+(lastData.city||lastCity).replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-'+stamp()+'.pdf');
-  }catch(e){ setStatus('Snapshot failed: '+e.message+' — using print instead.',true); window.print(); }
-  finally{ node.remove(); btn.disabled=false; btn.textContent=old; }
+  }catch(e){ setStatus('PDF failed: '+e.message+' — using print instead.',true); window.print(); }
+  finally{ host.remove(); btn.disabled=false; btn.textContent=old; }
 }
 
 function newCity(){ cityEl.value=''; depthEl.value='lite'; outEl.style.display='none'; outEl.innerHTML=''; setStatus(''); window.scrollTo({top:0,behavior:'smooth'}); cityEl.focus(); }
