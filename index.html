@@ -60,16 +60,6 @@
   input.city:focus{border-color:var(--cyan);}
   input.city::placeholder{color:#3f4c5a;}
 
-  .row{display:flex;gap:12px;align-items:center;margin-top:14px;flex-wrap:wrap;}
-  .file-btn{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--cyan);
-      background:transparent;border:1px dashed rgba(0,229,255,.35);border-radius:3px;padding:11px 15px;cursor:pointer;transition:.18s;}
-  .file-btn:hover{background:rgba(0,229,255,.07);border-style:solid;}
-  input[type=file]{display:none;}
-  .fname{font-family:var(--mono);font-size:12px;color:var(--muted);}
-  .clearimg{color:var(--magenta);cursor:pointer;font-family:var(--mono);font-size:12px;text-decoration:underline;}
-  .preview{margin-top:12px;display:none;}
-  .preview img{max-height:180px;max-width:100%;border:1px solid var(--line);border-radius:3px;}
-
   .rebuild-row{margin-top:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .rebuild-row label{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--muted);text-transform:uppercase;}
   select{background:#020407;color:var(--cyan);border:1px solid rgba(0,229,255,.3);border-radius:3px;
@@ -185,7 +175,7 @@
   <header>
     <div class="tag">GF · Field Instrument</div>
     <h1>CITYSCOPE</h1>
-    <div class="sub">Not a tourism report. An illustrator's x-ray for a place. Give it a <b>city name</b> and/or a <b>photo</b> — get back a scored <b>Illustration Kit</b>: heroes, icons, weird stuff, lettering, map callouts and the one detail that makes a local say <i>"wait — how did you know about THAT?"</i></div>
+    <div class="sub">Not a tourism report. An illustrator's x-ray for a place. Give it a <b>city name</b> — get back a scored <b>Illustration Kit</b>: heroes, icons, weird stuff, lettering, map callouts and the one detail that makes a local say <i>"wait — how did you know about THAT?"</i></div>
   </header>
 
   <details class="filters">
@@ -194,21 +184,15 @@
   </details>
 
   <div class="io">
-    <label class="lbl">City · type a name and / or upload a photo</label>
+    <label class="lbl">City · type a name</label>
     <input class="city" id="city" placeholder="e.g. Snellville, Georgia">
-    <div class="row">
-      <button class="file-btn" id="pick">&#9650; Upload city photo</button>
-      <input type="file" id="file" accept="image/*">
-      <span class="fname" id="fname"></span>
-      <span class="clearimg" id="clearimg" style="display:none">clear</span>
-    </div>
-    <div class="preview" id="preview"><img id="pimg" alt="upload preview"></div>
 
     <div class="rebuild-row">
       <label for="depth">Depth</label>
       <select id="depth">
-        <option value="fast">Fast &middot; model knowledge (quick)</option>
-        <option value="deep">Deep &middot; web-verified (slower, better for small towns)</option>
+        <option value="lite">Lite &middot; names only (cheapest, ~800 tokens)</option>
+        <option value="fast">Fast &middot; scored kit (model knowledge)</option>
+        <option value="deep">Deep &middot; web-verified (slower, best for small towns)</option>
       </select>
     </div>
 
@@ -249,7 +233,7 @@ const LENSES = [
   ["Only here","The detail that makes someone who grew up there gasp. The whole point."]
 ];
 
-let imageData=null, mediaType=null, lastData=null, lastCity='', lastImageUrl=null;
+let lastData=null, lastCity='';
 
 const $ = id => document.getElementById(id);
 const cityEl=$('city'), statusEl=$('status'), outEl=$('out'), goEl=$('go'), depthEl=$('depth');
@@ -264,17 +248,6 @@ const cityEl=$('city'), statusEl=$('status'), outEl=$('out'), goEl=$('go'), dept
   });
 })();
 
-$('pick').addEventListener('click',()=>$('file').click());
-$('clearimg').addEventListener('click',clearImage);
-$('file').addEventListener('change',e=>{
-  const f=e.target.files[0]; if(!f) return;
-  mediaType=f.type||'image/png';
-  const r=new FileReader();
-  r.onload=()=>{imageData=r.result.split(',')[1];$('pimg').src=r.result;$('preview').style.display='block';$('fname').textContent=f.name;$('clearimg').style.display='inline';};
-  r.readAsDataURL(f);
-});
-function clearImage(){imageData=null;mediaType=null;$('file').value='';$('preview').style.display='none';$('fname').textContent='';$('clearimg').style.display='none';}
-
 const LENS_TEXT = LENSES.map(([n,d])=>`- ${n}: ${d}`).join('\n');
 
 const INSTRUCTION = `You are CITYSCOPE, a research scout for an illustrator building an ILLUSTRATED CITY GUIDE. You are NOT writing a tourism brochure. Your job is to find the VISUAL SOUL of a place — the specific, drawable things that make it unmistakable — and hand back a curated, scored kit an illustrator can start drawing from immediately.
@@ -287,7 +260,7 @@ RULES THAT SEPARATE THIS FROM A BROCHURE:
 - Prefer things a LOCAL would recognize without a label over things a tourist board would list.
 - People are drawn as the OBJECT tied to them (the guitar, the diner booth, the invention), not as a portrait — put the person's name in the description.
 - Chase the "Only Here" test hardest: the one detail that makes someone who grew up there say "wait — how did you know about THAT?"
-- HONESTY: only assert specifics you're actually confident are true of THIS place. If you don't have real local knowledge, lean on what the photo shows and on genuinely characteristic regional details, and keep it plausible rather than inventing fake landmarks, fake statues, or fake festivals. Better a true ordinary thing than a fabricated famous one.
+- HONESTY: only assert specifics you're actually confident are true of THIS place. If you don't have real local knowledge, lean on genuinely characteristic regional details, and keep it plausible rather than inventing fake landmarks, fake statues, or fake festivals. Better a true ordinary thing than a fabricated famous one.
 
 SCORING (integers 1-5) for every visual item:
 - v = visual potential (how striking / drawable)
@@ -320,29 +293,39 @@ Return the CURATED strongest ingredients, capped per section. Respond with ONLY 
 
 CAPS: hero up to 5, icons up to 10, weird up to 5, people up to 5, nature up to 5, map up to 5, lettering up to 5, jokes up to 3, eastereggs up to 3, palette 5-6.`;
 
+const LITE_INSTRUCTION = `You are CITYSCOPE, a scout for an illustrator building a city guide. Find the specific, drawable things that make this place unmistakable — not a tourist list. Reject generic: "a courthouse" is nothing; "the 1911 copper-domed courthouse locals use for directions" is an ingredient. Chase the one "only here" detail hardest. Only assert specifics you're confident are true; if unsure, lean on genuinely characteristic regional details rather than inventing landmarks.
+
+Return ONLY valid JSON, no markdown. Each list item is a short string formatted "Name — brief drawable detail":
+{
+ "city":"Full city, region",
+ "read":"one line: the visual soul of this place",
+ "only_here":"one line: the 'how did you know about THAT?' detail",
+ "hero":["up to 3"],
+ "icons":["up to 6"],
+ "weird":["up to 3"],
+ "people":["up to 2 — the drawable object + the person's name"],
+ "nature":["up to 2"],
+ "map":["up to 3 — a 'which way to…' or landmark-for-directions callout"],
+ "lettering":["up to 3 words/phrases to hand-letter"],
+ "palette":[{"name":"color name","hex":"#rrggbb"}]
+}
+Palette: 5 swatches. Keep every string tight.`;
+
 async function run(){
   const city=cityEl.value.trim();
-  if(!city && !imageData){ setStatus('Type a city name or upload a photo first.',true); return; }
+  if(!city){ setStatus('Type a city name first.',true); return; }
   goEl.disabled=true; outEl.style.display='none'; outEl.innerHTML='';
   setStatus('<span class="scan">Scoping the city</span>');
 
-  lastCity = city || '(from photo)';
-  lastImageUrl = imageData ? ('data:'+mediaType+';base64,'+imageData) : null;
+  lastCity = city;
 
-  const deep = depthEl.value==='deep';
-  let task = INSTRUCTION;
-  if(city) task += `\n\nCITY: ${city}`;
-  if(imageData) task += `\n\nA photo of the city is attached above — use what you can actually see in it to ground and sharpen the specifics.`;
+  const mode = depthEl.value;              // 'lite' | 'fast' | 'deep'
+  const deep = mode==='deep';
+  const lite = mode==='lite';
+  let task = (lite ? LITE_INSTRUCTION : INSTRUCTION) + `\n\nCITY: ${city}`;
   if(deep) task += `\n\nUse web search to VERIFY the specific landmarks, foods, people, festivals and oddities before listing them, and prefer verified real details over guesses. Then return only the JSON.`;
 
-  let content;
-  if(imageData){
-    content=[{type:'image',source:{type:'base64',media_type:mediaType,data:imageData}},{type:'text',text:task}];
-  } else {
-    content=task;
-  }
-
-  const body={ model:MODEL, max_tokens:8000, messages:[{role:'user',content}] };
+  const body={ model:MODEL, max_tokens: lite?900:8000, messages:[{role:'user',content:task}] };
   if(deep) body.tools=[{type:'web_search_20250305',name:'web_search'}];
 
   try{
@@ -371,26 +354,35 @@ function num(x){x=parseInt(x,10);return isNaN(x)?0:Math.max(0,Math.min(5,x));}
 function dots(v,n){v=num(v);let s='';for(let i=1;i<=5;i++)s+=i<=v?'\u25CF':'\u25CB';return `<span class="dots"><span class="on">${'\u25CF'.repeat(v)}</span><span class="off">${'\u25CB'.repeat(5-v)}</span></span>`;}
 function meter(label,v){return `<span class="mt">${label} ${dots(v)}</span>`;}
 
+// Accept either a scored object {n,d,v,...} or a plain "Name — detail" string (Lite).
+function normItem(it){
+  if(typeof it==='string'){
+    const parts=it.split(/\s+[\u2014\u2013-]\s+/);
+    return parts.length>=2 ? {n:parts[0], d:parts.slice(1).join(' \u2014 ')} : {n:it};
+  }
+  return it||{};
+}
+function hasScore(it){ return it.v!=null||it.l!=null||it.r!=null||it.q!=null; }
+
 function itemHTML(it){
   const diff=esc(it.diff||''); const use=esc(it.use||'');
   const dcls=/easy/i.test(diff)?'d-Easy':/hard/i.test(diff)?'d-Hard':'d-Med';
+  const tags = (use||diff) ? `<div class="tags">${use?`<span class="tg use">${use}</span>`:''}${diff?`<span class="tg ${dcls}">${diff}</span>`:''}</div>` : '';
+  const meters = hasScore(it) ? `<div class="meters">${meter('V',it.v)}${meter('L',it.l)}${meter('R',it.r)}${meter('Q',it.q)}</div>` : '';
   return `<div class="item">
     <div class="top">
       <div style="flex:1;min-width:200px">
         <div class="nm">${esc(it.n)}</div>
         ${it.d?`<div class="ds">${esc(it.d)}</div>`:''}
       </div>
-      <div class="tags">
-        ${use?`<span class="tg use">${use}</span>`:''}
-        ${diff?`<span class="tg ${dcls}">${diff}</span>`:''}
-      </div>
+      ${tags}
     </div>
-    <div class="meters">${meter('V',it.v)}${meter('L',it.l)}${meter('R',it.r)}${meter('Q',it.q)}</div>
+    ${meters}
   </div>`;
 }
 
 function scoreSort(arr){
-  return (arr||[]).slice().sort((a,b)=>{
+  return arr.slice().sort((a,b)=>{
     const sa=num(a.v)+num(a.l)*1.5+num(a.q)*0.8+num(a.r)*0.7;
     const sb=num(b.v)+num(b.l)*1.5+num(b.q)*0.8+num(b.r)*0.7;
     return sb-sa;
@@ -398,9 +390,13 @@ function scoreSort(arr){
 }
 
 function section(cls,name,arr,cap){
-  const items=scoreSort(arr).slice(0,cap);
+  let items=(arr||[]).map(normItem).filter(x=>x.n);
+  const scored = items.some(hasScore);
+  if(scored) items=scoreSort(items);
+  items=items.slice(0,cap);
   if(!items.length) return '';
-  return `<div class="sec ${cls}"><div class="sh"><span class="sn">${name}</span><span class="sc">${items.length} ${items.length===1?'ingredient':'ingredients'} · sorted strongest first</span></div>${items.map(itemHTML).join('')}</div>`;
+  const meta = scored ? `${items.length} ${items.length===1?'ingredient':'ingredients'} · sorted strongest first` : `${items.length}`;
+  return `<div class="sec ${cls}"><div class="sh"><span class="sn">${name}</span><span class="sc">${meta}</span></div>${items.map(itemHTML).join('')}</div>`;
 }
 
 function plainSection(cls,name,arr,fmt){
@@ -422,7 +418,7 @@ function bodyHTML(d){
   h+=section('a-cyan','Map callouts',d.map,5);
 
   // Lettering chips
-  const lt=(d.lettering||[]).filter(x=>x&&x.phrase).slice(0,5);
+  const lt=(d.lettering||[]).map(x=>typeof x==='string'?{phrase:x}:x).filter(x=>x&&x.phrase).slice(0,5);
   if(lt.length){
     h+=`<div class="sec a-amber"><div class="sh"><span class="sn">Lettering opportunities</span><span class="sc">${lt.length}</span></div><div class="chips">${lt.map(x=>`<div class="chip"><div class="ph">${esc(x.phrase)}</div>${x.note?`<div class="nt">${esc(x.note)}</div>`:''}</div>`).join('')}</div></div>`;
   }
@@ -503,7 +499,7 @@ async function snapshot(){
   finally{ node.remove(); btn.disabled=false; btn.textContent=old; }
 }
 
-function newCity(){ cityEl.value=''; clearImage(); depthEl.value='fast'; outEl.style.display='none'; outEl.innerHTML=''; setStatus(''); window.scrollTo({top:0,behavior:'smooth'}); cityEl.focus(); }
+function newCity(){ cityEl.value=''; depthEl.value='lite'; outEl.style.display='none'; outEl.innerHTML=''; setStatus(''); window.scrollTo({top:0,behavior:'smooth'}); cityEl.focus(); }
 
 function setStatus(m,e){ statusEl.innerHTML=m; statusEl.className='status'+(e?' err':''); }
 
