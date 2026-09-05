@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&family=Exo+2:ital,wght@0,300;0,400;0,600;1,400&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root{
@@ -191,7 +190,7 @@
       <label for="depth">Depth</label>
       <select id="depth">
         <option value="lite">Lite &middot; names only (cheapest, ~800 tokens)</option>
-        <option value="fast">Fast &middot; scored kit + research list</option>
+        <option value="fast">Standard &middot; scored kit + research list</option>
       </select>
     </div>
 
@@ -480,102 +479,179 @@ function render(d){
 function stamp(){const p=n=>String(n).padStart(2,'0');const t=new Date();return `${t.getFullYear()}-${p(t.getMonth()+1)}-${p(t.getDate())}-${p(t.getHours())}${p(t.getMinutes())}`;}
 function prettyStamp(){return new Date().toLocaleString([],{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
 
-function coverNodeHTML(d){
-  return `<div style="width:736px;background:#04060a;padding:74px 48px;box-sizing:border-box;font-family:var(--body);color:var(--text);
-      background-image:linear-gradient(rgba(0,229,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,.05) 1px,transparent 1px);background-size:44px 44px;">
-    <div style="font-family:var(--mono);font-size:12px;letter-spacing:.34em;color:var(--cyan);text-transform:uppercase;">GF · Field Instrument</div>
-    <div style="font-family:var(--head);font-weight:900;font-size:74px;letter-spacing:.05em;color:#eaf6ff;text-shadow:0 0 22px rgba(0,229,255,.3);margin:10px 0 2px;">CITYSCOPE</div>
-    <div style="height:1px;background:var(--line);margin:22px 0;"></div>
-    <div style="font-family:var(--head);font-weight:700;font-size:30px;color:#eaf6ff;line-height:1.25;">${esc(d.city||lastCity)}</div>
-    <div style="font-family:var(--head);font-weight:700;font-size:17px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);margin-top:6px;">Illustration Kit</div>
-    <div style="font-family:var(--mono);font-size:12px;letter-spacing:.16em;color:var(--muted);text-transform:uppercase;margin-top:14px;">${esc(prettyStamp())}</div>
-    ${d.read?`<div style="font-size:17px;line-height:1.6;color:var(--text);margin-top:34px;max-width:560px;">${esc(d.read)}</div>`:''}
-    ${d.only_here?`<div style="background:linear-gradient(180deg,rgba(255,47,208,.1),rgba(0,229,255,.05));border:1px solid rgba(255,47,208,.4);border-left:3px solid var(--magenta);border-radius:4px;padding:16px 18px;margin-top:26px;">
-        <div style="font-family:var(--mono);font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--magenta);margin-bottom:7px;">Only here</div>
-        <div style="font-size:17px;line-height:1.5;color:#f2f8ff;">${esc(d.only_here)}</div></div>`:''}
-  </div>`;
-}
-
 async function snapshot(){
   if(!lastData) return;
   const btn=$('snap');
-  const haveLibs=(typeof html2canvas!=='undefined')&&window.jspdf&&window.jspdf.jsPDF;
-  if(!haveLibs){ window.print(); return; }
+  if(!(window.jspdf&&window.jspdf.jsPDF)){ window.print(); return; }
   const old=btn.textContent; btn.disabled=true; btn.textContent='… building PDF';
-  if(document.fonts&&document.fonts.ready){ try{ await document.fonts.ready; }catch(e){} }
-
-  const host=document.createElement('div');
-  host.style.cssText='position:absolute;left:-99999px;top:0;width:736px;background:#04060a;';
-  host.innerHTML=coverNodeHTML(lastData)+'<div id="bodyblocks">'+bodyHTML(lastData)+'</div>';
-  document.body.appendChild(host);
-  const cover=host.firstElementChild;
-  const bodyWrap=host.querySelector('#bodyblocks');
-  Array.from(bodyWrap.children).forEach(c=>{ c.style.marginBottom='0'; });
-
   try{
-    await new Promise(r=>setTimeout(r,140));
-    const opt={scale:1.75,backgroundColor:'#04060a',useCORS:true,logging:false};
-    const coverCanvas=await html2canvas(cover,opt);
-    const blocks=[];
-    for(const c of Array.from(bodyWrap.children)){
-      if(c.classList.contains('kithead')||c.classList.contains('onlyhere')) continue; // already on cover
-      if(c.offsetHeight<4) continue;
-      blocks.push(await html2canvas(c,opt));
-    }
-
+    await new Promise(r=>setTimeout(r,20));
+    const d=lastData;
     const {jsPDF}=window.jspdf;
-    const pdf=new jsPDF({unit:'px',format:'letter',compress:true});
-    const JPEG=0.8;
-    const PW=pdf.internal.pageSize.getWidth();
-    const PH=pdf.internal.pageSize.getHeight();
-    const M=40, CW=PW-2*M, GAP=14;
-    const fill=()=>{ pdf.setFillColor(4,6,10); pdf.rect(0,0,PW,PH,'F'); };
+    const P=new jsPDF({unit:'pt',format:'letter',compress:true});
+    const PW=P.internal.pageSize.getWidth();   // 612
+    const PH=P.internal.pageSize.getHeight();  // 792
+    const M=42, CW=PW-2*M;
+    // palette (rgb)
+    const C={ bg:[4,6,10], panel:[11,16,26], text:[203,216,228], white:[236,247,255], muted:[122,138,156],
+              cyan:[0,229,255], magenta:[255,47,208], amber:[255,176,0], green:[34,255,167], line:[24,40,52], off:[46,56,68] };
+    let y=M;
+    const bg=()=>{ P.setFillColor.apply(P,C.bg); P.rect(0,0,PW,PH,'F'); };
+    const nl=()=>{ P.addPage(); bg(); y=M; };
+    const need=(h)=>{ if(y+h>PH-M){ nl(); return true; } return false; };
+    const setF=(style,size,rgb)=>{ P.setFont(style==='mono'?'courier':'helvetica', style==='bold'?'bold':(style==='mono'?'normal':'normal')); P.setFontSize(size); P.setTextColor(rgb[0],rgb[1],rgb[2]); };
+    // wrapped paragraph; advances y. baseline≈top+size*0.82
+    const para=(str,x,size,style,rgb,w,lh)=>{ if(!str) return; setF(style,size,rgb); const lines=P.splitTextToSize(String(str), w||CW); const step=lh||size*1.34; for(const ln of lines){ need(step); P.text(ln,x,y+size*0.82); y+=step; } };
 
-    // Page 1 — cover
-    fill();
-    { const dh=Math.min(CW*(coverCanvas.height/coverCanvas.width),PH-2*M);
-      const y=Math.max(M,(PH-dh)/2);
-      pdf.addImage(coverCanvas.toDataURL('image/jpeg',JPEG),'JPEG',M,y,CW,dh); }
-
-    // Body pages
-    pdf.addPage(); fill(); let y=M;
-    const place=(canvas)=>{
-      const dh=CW*(canvas.height/canvas.width);
-      if(dh<=PH-2*M){
-        if(y+dh>PH-M){ pdf.addPage(); fill(); y=M; }
-        pdf.addImage(canvas.toDataURL('image/jpeg',JPEG),'JPEG',M,y,CW,dh); y+=dh+GAP;
-      } else {
-        if(y>M){ pdf.addPage(); fill(); y=M; }
-        const scale=CW/canvas.width;
-        const chunkSrcH=Math.floor((PH-2*M)/scale);
-        let sy=0;
-        while(sy<canvas.height){
-          const hSrc=Math.min(chunkSrcH,canvas.height-sy);
-          const tmp=document.createElement('canvas'); tmp.width=canvas.width; tmp.height=hSrc;
-          const g=tmp.getContext('2d'); g.fillStyle='#04060a'; g.fillRect(0,0,tmp.width,tmp.height);
-          g.drawImage(canvas,0,sy,canvas.width,hSrc,0,0,canvas.width,hSrc);
-          const dhc=CW*(hSrc/canvas.width);
-          if(y+dhc>PH-M && y>M){ pdf.addPage(); fill(); y=M; }
-          pdf.addImage(tmp.toDataURL('image/jpeg',JPEG),'JPEG',M,y,CW,dhc); y+=dhc+GAP;
-          sy+=hSrc;
-        }
+    const sectionHead=(name,sub,rgb)=>{
+      y+=10; need(30);
+      setF('bold',12,rgb); P.text(name.toUpperCase(),M,y+9);
+      const nw=P.getTextWidth(name.toUpperCase());
+      if(sub){ setF('mono',7.5,C.muted); P.text(sub,M+nw+10,y+8); }
+      y+=16; P.setDrawColor.apply(P,C.line); P.setLineWidth(0.6); P.line(M,y,M+CW,y); y+=10;
+    };
+    const diffColor=(d)=>{ d=(d||'').toLowerCase(); return d.indexOf('easy')>-1?C.green:(d.indexOf('hard')>-1?[255,84,112]:C.amber); };
+    const meters=(it,x,yTop,accent)=>{
+      const ms=[['V',it.v],['L',it.l],['R',it.r],['Q',it.q]]; let cx=x; const cy=yTop+3.2, r=1.8;
+      for(const [lab,val] of ms){
+        setF('mono',7.5,C.muted); P.text(lab,cx,yTop+5.6); cx+=P.getTextWidth(lab)+3.5;
+        for(let i=1;i<=5;i++){ if(i<=num(val)){ P.setFillColor(accent[0],accent[1],accent[2]); P.circle(cx+r,cy,r,'F'); } else { P.setDrawColor.apply(P,C.off); P.setLineWidth(0.5); P.circle(cx+r,cy,r,'S'); } cx+=r*2+2; }
+        cx+=6;
       }
     };
-    blocks.forEach(place);
+    const scoredItem=(it,accent)=>{
+      const padX=12,padT=10,padB=10;
+      setF('bold',10.5,C.white); const titleLines=P.splitTextToSize(String(it.n||''),CW-118);
+      setF('normal',9.3,C.text); const descLines= it.d?P.splitTextToSize(String(it.d),CW-2*padX):[];
+      const titleH=titleLines.length*13, descH=descLines.length*12.2, meterH=13;
+      const cardH=padT+titleH+(descH?descH+4:0)+7+meterH+padB;
+      need(cardH);
+      P.setFillColor.apply(P,C.panel); P.rect(M,y,CW,cardH,'F');
+      P.setFillColor(accent[0],accent[1],accent[2]); P.rect(M,y,3,cardH,'F');
+      // tags top-right
+      setF('mono',7.5,C.cyan); let tx=M+CW-padX;
+      if(it.diff){ const dc=diffColor(it.diff); setF('mono',7.5,dc); const t=String(it.diff).toUpperCase(); P.text(t,tx,y+padT+7,{align:'right'}); tx-=P.getTextWidth(t)+9; }
+      if(it.use){ setF('mono',7.5,C.cyan); P.text(String(it.use).toUpperCase(),tx,y+padT+7,{align:'right'}); }
+      let ty=y+padT;
+      setF('bold',10.5,C.white); for(const ln of titleLines){ P.text(ln,M+padX,ty+8.6); ty+=13; }
+      if(descLines.length){ ty+=4; setF('normal',9.3,C.text); for(const ln of descLines){ P.text(ln,M+padX,ty+8); ty+=12.2; } }
+      ty+=7; meters(it,M+padX,ty,accent);
+      y+=cardH+8;
+    };
+    const scoredSection=(name,arr,cap,accent)=>{
+      const items=scoreSort(arr).slice(0,cap); if(!items.length) return;
+      sectionHead(name,items.length+' · strongest first',accent);
+      items.forEach(it=>scoredItem(it,accent));
+    };
+    const bulletList=(name,arr,accent)=>{
+      arr=(arr||[]).filter(Boolean); if(!arr.length) return;
+      sectionHead(name,'',accent);
+      arr.forEach(s=>{ y+=1; setF('bold',10,accent); need(14); P.text('\u2022',M,y+8);
+        setF('normal',10,C.text); const lines=P.splitTextToSize(String(s),CW-16); const step=13.4;
+        for(let i=0;i<lines.length;i++){ if(i>0)need(step); P.text(lines[i],M+16,y+8); y+=step; } y+=3; });
+    };
+    const labeledBlock=(label,body,accent)=>{
+      if(!body) return; y+=8; need(20);
+      setF('mono',9,accent); P.text(label.toUpperCase(),M,y+7); y+=15;
+      para(body,M,10.5,'normal',C.text,CW,14.6); y+=2;
+    };
 
-    // Footers
-    const total=pdf.getNumberOfPages();
-    for(let p=1;p<=total;p++){
-      pdf.setPage(p);
-      pdf.setFont('helvetica','normal'); pdf.setFontSize(7); pdf.setTextColor(95,112,130);
-      pdf.text('QUIRKY FLASH CHRONICLES · GRAVIFICER SYSTEM',M,PH-16);
-      pdf.text('p '+p+' / '+total,PW-M,PH-16,{align:'right'});
+    // ---------- PAGE 1: COVER ----------
+    bg(); y=M+70;
+    setF('mono',9.5,C.cyan); P.text('GF · FIELD INSTRUMENT',M,y); y+=34;
+    setF('bold',48,C.white); P.text('CITYSCOPE',M,y); y+=18;
+    P.setDrawColor(0,90,108); P.setLineWidth(0.8); P.line(M,y,M+CW,y); y+=30;
+    setF('bold',22,C.white); const cl=P.splitTextToSize(String(d.city||lastCity),CW); for(const ln of cl){ P.text(ln,M,y); y+=25; }
+    y+=2; setF('mono',11,C.amber); P.text('ILLUSTRATION KIT',M,y); y+=20;
+    setF('mono',8.5,C.muted); P.text(String(prettyStamp()).toUpperCase(),M,y); y+=28;
+    if(d.read){ para(d.read,M,11.5,'normal',C.text,CW-30,16); }
+    if(d.only_here){
+      y+=18; setF('normal',11.5,C.white); const ol=P.splitTextToSize(String(d.only_here),CW-52);
+      const boxH=18+16+ol.length*15+16;
+      P.setFillColor(22,10,24); P.rect(M,y,CW,boxH,'F'); P.setFillColor.apply(P,C.magenta); P.rect(M,y,3,boxH,'F');
+      let by=y+20; setF('mono',8.5,C.magenta); P.text('ONLY HERE',M+16,by); by+=18;
+      setF('normal',11.5,[242,248,255]); for(const ln of ol){ P.text(ln,M+16,by); by+=15; }
+      y+=boxH;
     }
 
-    pdf.save('cityscope-'+(lastData.city||lastCity).replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-'+stamp()+'.pdf');
-  }catch(e){ setStatus('PDF failed: '+e.message+' — using print instead.',true); window.print(); }
-  finally{ host.remove(); btn.disabled=false; btn.textContent=old; }
+    // ---------- BODY ----------
+    nl();
+    scoredSection('Hero images',d.hero,5,C.amber);
+    scoredSection('Supporting icons',d.icons,10,C.cyan);
+    scoredSection('Weird little things',d.weird,5,C.magenta);
+    scoredSection('People / stories',d.people,5,C.green);
+    scoredSection('Nature elements',d.nature,5,C.green);
+    scoredSection('Map callouts',d.map,5,C.cyan);
+
+    // Lettering
+    const lt=(d.lettering||[]).filter(x=>x&&x.phrase).slice(0,5);
+    if(lt.length){ sectionHead('Lettering opportunities','',C.amber);
+      lt.forEach(x=>{ setF('bold',13,C.amber); const pl=P.splitTextToSize(String(x.phrase),CW-14);
+        const nlines=x.note?P.splitTextToSize(String(x.note),CW-14):[];
+        const h=pl.length*15+(nlines.length?nlines.length*11+2:0)+8; need(h);
+        P.setFillColor(255,176,0); P.rect(M,y,2.5,h-4,'F');
+        let ly=y; setF('bold',13,C.amber); for(const ln of pl){ P.text(ln,M+12,ly+11); ly+=15; }
+        if(nlines.length){ ly+=2; setF('normal',8.7,C.muted); for(const ln of nlines){ P.text(ln,M+12,ly+8); ly+=11; } }
+        y+=h; }); }
+
+    bulletList('Local jokes',d.jokes,C.magenta);
+    bulletList('Historical easter eggs',d.eastereggs,C.green);
+
+    // Palette
+    const pal=(d.palette||[]).filter(x=>x&&x.hex).slice(0,6);
+    if(pal.length){ sectionHead('Color inspiration','',C.cyan);
+      const per=3, gap=10, sw=(CW-gap*(per-1))/per;
+      for(let i=0;i<pal.length;i+=per){
+        const row=pal.slice(i,i+per); const cells=[];
+        let rowH=0;
+        row.forEach(x=>{ setF('bold',8.6,C.white); const nmL=P.splitTextToSize(String(x.name||''),sw-6).slice(0,2);
+          setF('normal',7.4,C.muted); const ntL=x.note?P.splitTextToSize(String(x.note),sw-6).slice(0,3):[];
+          const h=22+4+nmL.length*10+10+(ntL.length?ntL.length*8.4+2:0)+6; cells.push({x,nmL,ntL,h}); rowH=Math.max(rowH,h); });
+        need(rowH+8);
+        row.forEach((x,j)=>{ const cx=M+j*(sw+gap); const cell=cells[j];
+          const rgb=hexRGB(x.hex)||[40,40,40]; P.setFillColor(rgb[0],rgb[1],rgb[2]); P.rect(cx,y,sw,22,'F');
+          let cy=y+22+4; setF('bold',8.6,C.white); for(const ln of cell.nmL){ P.text(ln,cx,cy+7); cy+=10; }
+          setF('mono',8,C.muted); P.text(String(x.hex),cx,cy+6); cy+=12;
+          if(cell.ntL.length){ setF('normal',7.4,C.muted); for(const ln of cell.ntL){ P.text(ln,cx,cy+6); cy+=8.4; } }
+        });
+        y+=rowH+8;
+      }
+    }
+
+    labeledBlock('Architectural shapes',d.shapes,C.cyan);
+    labeledBlock('Patterns & textures',d.patterns,C.cyan);
+
+    if(d.map_route||d.poster||d.cover){
+      sectionHead('Composition starts','ways to assemble it',C.green);
+      labeledBlock('Illustrated map',d.map_route,C.green);
+      labeledBlock('Poster',d.poster,C.green);
+      labeledBlock('Guide cover',d.cover,C.green);
+    }
+
+    // Go verify
+    const vf=(d.verify||[]).map(x=>typeof x==='string'?{what:x}:x).filter(x=>x&&x.what).slice(0,5);
+    if(vf.length){ sectionHead('Go verify','built from model memory · spot-check before you draw',C.magenta);
+      vf.forEach(x=>{ setF('bold',10,C.white); const wL=P.splitTextToSize(String(x.what),CW-14);
+        const chkL= x.where?P.splitTextToSize(String(x.where),CW-52):[];
+        const h=8+wL.length*13+(chkL.length?chkL.length*12+4:0)+8; need(h);
+        P.setFillColor.apply(P,C.magenta); P.rect(M,y,2.5,h-4,'F');
+        let ly=y+8; setF('bold',10,C.white); for(const ln of wL){ P.text(ln,M+12,ly); ly+=13; }
+        if(chkL.length){ ly+=4; setF('mono',8,C.magenta); P.text('CHECK \u203A',M+12,ly);
+          setF('normal',9.3,C.muted); for(let i=0;i<chkL.length;i++){ P.text(chkL[i],M+52,ly); ly+=12; } }
+        y+=h; }); }
+
+    // ---------- FOOTERS ----------
+    const total=P.getNumberOfPages();
+    for(let p=1;p<=total;p++){ P.setPage(p); setF('mono',6.5,[92,107,124]);
+      P.text('QUIRKY FLASH CHRONICLES · GRAVIFICER SYSTEM',M,PH-22);
+      P.text('p '+p+' / '+total,PW-M,PH-22,{align:'right'}); }
+
+    P.save('cityscope-'+(String(d.city||lastCity)).replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-'+stamp()+'.pdf');
+  }catch(e){ setStatus('PDF failed: '+e.message+' — try again.',true); }
+  finally{ btn.disabled=false; btn.textContent=old; }
 }
+
+function hexRGB(h){ if(!h) return null; h=String(h).trim().replace('#',''); if(h.length===3) h=h.split('').map(c=>c+c).join(''); if(h.length!==6||/[^0-9a-f]/i.test(h)) return null; return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
 
 function newCity(){ cityEl.value=''; depthEl.value='lite'; outEl.style.display='none'; outEl.innerHTML=''; setStatus(''); window.scrollTo({top:0,behavior:'smooth'}); cityEl.focus(); }
 
