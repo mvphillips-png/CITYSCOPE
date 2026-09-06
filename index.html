@@ -178,7 +178,7 @@
   </header>
 
   <details class="filters">
-    <summary>The 20 research lenses it looks through</summary>
+    <summary>The 15 research lenses it looks through</summary>
     <div class="flist" id="flist"></div>
   </details>
 
@@ -209,12 +209,11 @@ const MODEL = 'claude-sonnet-4-6';
 
 // The research lenses (shown for transparency; the engine looks through all of these).
 const LENSES = [
-  ["Visual anchors","Landmarks a local IDs with no label: courthouse, water tower, signs, storefronts."],
+  ["Visual anchors","Landmarks a local IDs with no label: distinctive buildings, towers, signs, storefronts."],
   ["Icons & symbols","Seal, flag, nicknames, mascots, local animal, recurring colors, adopted emblems."],
   ["Food","What locals argue belongs to them: a dish, a bakery item, a drink, a diner."],
   ["Local characters","Notable people — but drawn as the OBJECT tied to them, not a portrait."],
   ["Weird stuff","Odd statues, world's-largest claims, strange laws, roadside oddities, town legends."],
-  ["Everyday city","What an ordinary Saturday looks like — barbershop, porch, pickup line, market."],
   ["Geography","Rivers, hills, roads, and 'which way to…' relationships to bigger places."],
   ["Neighborhoods","Named districts with distinct personalities and unofficial boundaries."],
   ["History layers","Illustratable artifacts: a trolley, mill wheel, old newspaper, factory whistle."],
@@ -222,11 +221,7 @@ const LENSES = [
   ["Nature & wildlife","Local birds, trees, crops, fish, seasonal phenomena — identity beyond buildings."],
   ["Events & rituals","Festivals, races, weekly markets, traditions outsiders wouldn't understand."],
   ["Local language","Nicknames, sayings, pronunciations, slogans — hand-lettering material."],
-  ["Sounds","Bells, trains, cicadas, chants — non-obvious prompts that spark odd images."],
-  ["Transportation","Trolleys, ferries, pickup trucks, a beloved bridge, a nightmare intersection."],
   ["Businesses & institutions","Old shops, theaters, libraries woven into local identity."],
-  ["Sense of humor","What the town jokes about itself — traffic, weather, a rival city, a road."],
-  ["Local pride & complaints","'Birthplace of…' brags and the intersection everyone hates."],
   ["Tiny details","Manhole covers, lampposts, benches, license plates — the little filler pieces."],
   ["Only here","The detail that makes someone who grew up there gasp. The whole point."]
 ];
@@ -254,11 +249,17 @@ LOOK THROUGH ALL OF THESE LENSES (they are how you hunt, not the output shape):
 ${LENS_TEXT}
 
 RULES THAT SEPARATE THIS FROM A BROCHURE:
-- REJECT GENERIC. "A courthouse" is nothing. "The 1911 red-brick courthouse with the copper dome everyone uses for directions" is an ingredient. Every item must be specific, particular, and drawable.
+- THE NAME-SWAP TEST (most important rule): before you keep any item, ask "if I pasted a DIFFERENT city's name over this, would it still read as true?" If yes, DELETE IT. Every item must be false for other cities. A kit that could describe any American town is a failed kit.
+- BANNED unless carrying a detail unique to THIS city: courthouse, city hall, water tower, Main Street, "historic downtown", farmers market, local diner, "a mural", coffee shop, town square, welcome sign, generic river/park. These appear in every town; they are only allowed if you attach a specific name, date, quirk, or story that makes this one different (a real street name, a real business, a real person, a real event).
+- NAME NAMES. Real proper nouns are the signal of real knowledge: specific street names, business names, people, landmarks, festivals, roads. An item with zero proper nouns and zero specific detail is almost always generic filler — cut it.
+- CONFIDENCE GATE: for each item silently ask "do I actually know this specific thing about THIS exact city, or drop it. Do NOT invent a plausible-sounding landmark, statue, or festival to fill a slot.
+- NO REGIONAL BLEED (critical): do NOT assume a cultural community, cuisine, ethnicity, industry, or demographic trait that belongs to the broader metro area or a NEIGHBORING city applies to THIS city. Such traits cluster in specific towns, not evenly across a region — a Korean grocery corridor, a famous BBQ or music scene, a tech hub, a college-town vibe are concentrated somewhere specific. If you cannot confidently say a trait is concentrated in THIS exact city (not just its region), do NOT state it as fact: either omit it, or move it to "verify" phrased as a question ("confirm whether X is actually in THIS city vs. nearby towns"). Two neighboring suburbs should NOT come back with the same cultural profile unless you truly know they share it.
+- FEWER, REALER. The caps below are hard MAXIMUMS, not targets. Three items you genuinely know beat ten you padded. Returning 2 heroes and 4 icons for a city you know little about is the CORRECT behavior — a short honest kit is the goal, not a full generic one.
+- The example items inside the lenses and the JSON schema below are illustrations of the CATEGORY only — never reproduce them as answers.
 - Prefer things a LOCAL would recognize without a label over things a tourist board would list.
 - People are drawn as the OBJECT tied to them (the guitar, the diner booth, the invention), not as a portrait — put the person's name in the description.
 - Chase the "Only Here" test hardest: the one detail that makes someone who grew up there say "wait — how did you know about THAT?"
-- HONESTY: only assert specifics you're actually confident are true of THIS place. If you don't have real local knowledge, lean on genuinely characteristic regional details, and keep it plausible rather than inventing fake landmarks, fake statues, or fake festivals. Better a true ordinary thing than a fabricated famous one.
+- HONESTY: only assert specifics you're actually confident are true of THIS place. Better a true ordinary thing than a fabricated famous one, and better an empty slot than a generic one.
 
 SCORING (integers 1-5) for every visual item:
 - v = visual potential (how striking / drawable)
@@ -270,7 +271,7 @@ Also: diff = "Easy" | "Med" | "Hard" (illustration difficulty), and use = "Spot"
 Return the CURATED strongest ingredients, capped per section. Respond with ONLY valid JSON — no markdown, no preamble — in EXACTLY this shape:
 {
   "city": "Full city, region",
-  "read": "1-2 sentences: this place's visual soul — what makes it unmistakable to draw",
+  "read": "1-2 sentences: what makes THIS city visually different from the towns right next to it — write this FIRST, then make sure every item below ladders up to it",
   "only_here": "one sentence: the single strongest 'wait, how did you know about THAT?' detail",
   "palette": [{"name":"color name","hex":"#rrggbb","note":"where this color actually lives in town"}],
   "hero": [{"n":"name","d":"why it's a hero, specific","v":5,"l":5,"r":5,"q":3,"diff":"Med","use":"Hero"}],
@@ -280,7 +281,6 @@ Return the CURATED strongest ingredients, capped per section. Respond with ONLY 
   "nature": [{"n":"name","d":"specific creature/plant/feature","v":4,"l":4,"r":3,"q":3,"diff":"Easy","use":"Spot"}],
   "map": [{"n":"callout","d":"a 'which way to…' or landmark-for-directions relationship","v":3,"l":4,"r":4,"q":3,"diff":"Easy","use":"Map"}],
   "lettering": [{"phrase":"WORDS TO HAND-LETTER","note":"treatment / where it comes from"}],
-  "jokes": ["a thing the town jokes about itself, drawable"],
   "eastereggs": ["a small historical detail to hide in the art"],
   "shapes": "architectural shapes / recurring motifs worth repeating, 1-2 sentences",
   "patterns": "local patterns or textures for fills & backgrounds, 1-2 sentences",
@@ -290,11 +290,11 @@ Return the CURATED strongest ingredients, capped per section. Respond with ONLY 
   "verify": [{"what":"the specific claim or detail in THIS kit you're least sure is true / current","where":"the concrete place a human should check it — e.g. the city's own site, the local paper, a local subreddit/Facebook group, the historical society, Google Street View for signage"}]
 }
 
-SELF-AUDIT for "verify": since you have no live web access, end by flagging the 3-5 items in the kit above that are MOST likely to be wrong, outdated, or that you're guessing at for this specific city — a business that may have closed, a festival that may not exist, a "fact" you're not certain of, or anything you'd want a local to confirm. Be honest about your own soft spots rather than listing generic research advice. If you're genuinely confident about everything, still name the 3 details most worth a human's spot-check.
+SELF-AUDIT for "verify": since you have no live web access, end by flagging the 3-5 items in the kit above that are MOST likely to be wrong, outdated, or that you're guessing at for this specific city — a business that may have closed, a festival that may not exist, a "fact" you're not certain of, or anything you'd want a local to confirm. ANY cultural/demographic/industry trait you assumed from the region rather than know for THIS specific city MUST appear here as a question, not in the kit as fact. Be honest about your own soft spots rather than listing generic research advice. If you're genuinely confident about everything, still name the 3 details most worth a human's spot-check.
 
-CAPS: hero up to 5, icons up to 10, weird up to 5, people up to 5, nature up to 5, map up to 5, lettering up to 5, jokes up to 3, eastereggs up to 3, palette 5-6, verify 3-5.`;
+CAPS (hard MAXIMUMS, not targets — return fewer when you don't have that many genuinely city-specific items): hero up to 5, icons up to 10, weird up to 5, people up to 5, nature up to 5, map up to 5, lettering up to 5, eastereggs up to 3, palette 5-6, verify 3-5.`;
 
-const LITE_INSTRUCTION = `You are CITYSCOPE, a scout for an illustrator building a city guide. Find the specific, drawable things that make this place unmistakable — not a tourist list. Reject generic: "a courthouse" is nothing; "the 1911 copper-domed courthouse locals use for directions" is an ingredient. Chase the one "only here" detail hardest. Only assert specifics you're confident are true; if unsure, lean on genuinely characteristic regional details rather than inventing landmarks.
+const LITE_INSTRUCTION = `You are CITYSCOPE, a scout for an illustrator building a city guide. Find the specific, drawable things that make this place unmistakable — not a tourist list. THE NAME-SWAP TEST: if an item would still read true with a different city's name pasted over it, DELETE it. Banned unless carrying a detail unique to this city: courthouse, water tower, Main Street, historic downtown, farmers market, local diner, mural. Name real proper nouns — streets, businesses, people, events. Return FEWER real items rather than padding with generics; a short honest list beats a full generic one. Chase the one "only here" detail hardest. Only assert specifics you're confident are true; never invent a landmark to fill space.
 
 Return ONLY valid JSON, no markdown. Each list item is a short string formatted "Name — brief drawable detail":
 {
@@ -419,7 +419,6 @@ function bodyHTML(d){
     h+=`<div class="sec a-amber"><div class="sh"><span class="sn">Lettering opportunities</span><span class="sc">${lt.length}</span></div><div class="chips">${lt.map(x=>`<div class="chip"><div class="ph">${esc(x.phrase)}</div>${x.note?`<div class="nt">${esc(x.note)}</div>`:''}</div>`).join('')}</div></div>`;
   }
 
-  h+=plainSection('a-magenta','Local jokes',d.jokes,x=>`<div class="pl">${esc(x)}</div>`);
   h+=plainSection('a-green','Historical easter eggs',d.eastereggs,x=>`<div class="pl">${esc(x)}</div>`);
 
   // Palette
@@ -594,7 +593,6 @@ async function snapshot(){
         if(nlines.length){ ly+=2; setF('normal',8.7,C.muted); for(const ln of nlines){ P.text(ln,M+12,ly+8); ly+=11; } }
         y+=h; }); }
 
-    bulletList('Local jokes',d.jokes,C.magenta);
     bulletList('Historical easter eggs',d.eastereggs,C.green);
 
     // Palette
