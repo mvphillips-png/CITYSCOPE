@@ -191,6 +191,7 @@
       <select id="depth">
         <option value="lite">Lite &middot; names only (cheapest, ~800 tokens)</option>
         <option value="fast">Standard &middot; scored kit + research list</option>
+        <option value="map">Map &middot; everything to build an illustrated map</option>
       </select>
     </div>
 
@@ -312,6 +313,34 @@ Return ONLY valid JSON, no markdown. Each list item is a short string formatted 
 }
 Palette: 5 swatches. Keep every string tight.`;
 
+const MAP_INSTRUCTION = `You are CITYSCOPE in MAP mode — a scout for an illustrator drawing a fun, useful hand-lettered PICTORIAL city map: the city's outline, its town-center anchor, labeled roads with route shields, a handful of placed landmarks, and playful directional arrows pointing off the edge to nearby places. Gather everything needed to BUILD that map for this city.
+
+HONESTY (accuracy matters most on a map):
+- THE NAME-SWAP TEST: if a detail would read true for a different city, cut it. Name REAL roads, REAL route numbers, REAL neighboring towns.
+- NO REGIONAL BLEED: don't assume a metro-wide or neighboring-city trait sits in THIS city.
+- Don't invent roads, exits, rivers, or districts. If unsure, move it to "verify" as a question rather than stating it.
+
+THE SIGNATURE ELEMENT is the DIRECTIONAL ARROWS — the "which way to…" callouts pointing off the map edge to nearby cities and destinations, with the real road and a rough distance or vibe (e.g. "Atlanta — 45 min west on 78", "quickest way to the beach", "up 400 to the mountains"). Make these specific, correct, and fun.
+
+Return ONLY valid JSON, no markdown, in EXACTLY this shape:
+{
+ "city":"Full city, region",
+ "read":"1-2 sentences: what makes THIS city's map distinct — its shape, where it sits, what it's near",
+ "title_banner":"idea for the city-name banner / title lettering treatment",
+ "shape":"the character of the city's outline/boundary to draw (blobby, long, notable shape)",
+ "anchor":{"n":"the heart of the map — town center / main crossroads / downtown","d":"what to draw there"},
+ "directions":[{"to":"nearby city or destination","dir":"N|S|E|W|NE|NW|SE|SW","note":"the real road + rough distance or vibe"}],
+ "roads":[{"n":"road name or route number","d":"its role — main artery, the road locals orient by"}],
+ "landmarks":[{"n":"landmark to place on the map","d":"what to draw, and roughly where in town"}],
+ "nature":[{"n":"river / lake / hill / park / trail","d":"how it reads on the map"}],
+ "districts":[{"n":"neighborhood or area","d":"character / where it sits"}],
+ "legend":[{"sym":"a recurring map icon or symbol","means":"what it marks"}],
+ "frame":"border, background color, and texture idea for the whole map",
+ "extras":"compass rose, banner ribbons, scale bar, other decorative map furniture",
+ "verify":[{"what":"the least-certain claim above","where":"where a human should check it"}]
+}
+CAPS (hard maximums — return fewer if you don't genuinely know them): directions up to 6, roads up to 6, landmarks up to 6, nature up to 4, districts up to 5, legend up to 6, verify 3-5. Any road, distance, or nearby town you're not sure of goes in "verify", not stated as fact.`;
+
 async function run(){
   const city=cityEl.value.trim();
   if(!city){ setStatus('Type a city name first.',true); return; }
@@ -320,10 +349,13 @@ async function run(){
 
   lastCity = city;
 
-  const lite = depthEl.value==='lite';
+  const mode = depthEl.value;            // 'lite' | 'fast' | 'map'
+  const lite = mode==='lite';
+  const isMap = mode==='map';
 
   try{
-    const task = (lite ? LITE_INSTRUCTION : INSTRUCTION) + `\n\nCITY: ${city}`;
+    const prompt = isMap ? MAP_INSTRUCTION : (lite ? LITE_INSTRUCTION : INSTRUCTION);
+    const task = prompt + `\n\nCITY: ${city}`;
     const body={ model:MODEL, max_tokens: lite?900:8000, messages:[{role:'user',content:task}] };
     const res=await fetch(WORKER,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!res.ok) throw new Error('Worker returned '+res.status);
@@ -401,7 +433,50 @@ function plainSection(cls,name,arr,fmt){
   return `<div class="sec ${cls}"><div class="sh"><span class="sn">${name}</span><span class="sc">${arr.length}</span></div><div class="plist">${arr.map(fmt).join('')}</div></div>`;
 }
 
+function dirArrow(d){ d=(d||'').toUpperCase().replace(/[^NSEW]/g,''); const m={N:'\u2191',S:'\u2193',E:'\u2192',W:'\u2190',NE:'\u2197',NW:'\u2196',SE:'\u2198',SW:'\u2199'}; return m[d]||'\u2022'; }
+
+function mapBodyHTML(d){
+  let h='';
+  h+=`<div class="kithead"><div class="kc">${esc(d.city||lastCity)} — Map Kit</div>${d.read?`<div class="kr">${esc(d.read)}</div>`:''}</div>`;
+
+  const dirs=(d.directions||[]).filter(x=>x&&x.to).slice(0,6);
+  if(dirs.length){
+    h+=`<div class="sec a-amber"><div class="sh"><span class="sn">Directional arrows</span><span class="sc">the "which way to…" callouts — the fun part</span></div>`;
+    h+=dirs.map(x=>`<div class="item"><div class="nm" style="font-family:var(--head);font-weight:700;letter-spacing:.03em">${esc(dirArrow(x.dir))}&nbsp; ${esc(x.to)}</div>${x.note?`<div class="ds">${esc(x.note)}</div>`:''}</div>`).join('');
+    h+=`</div>`;
+  }
+
+  if(d.anchor && (d.anchor.n||d.anchor.d)){
+    h+=`<div class="onlyhere" style="border-color:rgba(0,229,255,.4);border-left-color:var(--cyan);background:linear-gradient(180deg,rgba(0,229,255,.08),rgba(0,229,255,.03))"><div class="k" style="color:var(--cyan)">Map anchor</div><div class="v">${esc(d.anchor.n||'')}${d.anchor.d?` — ${esc(d.anchor.d)}`:''}</div></div>`;
+  }
+
+  const itemFmt=x=>`<div class="item"><div class="nm">${esc(x.n)}</div>${x.d?`<div class="ds">${esc(x.d)}</div>`:''}</div>`;
+  const listSec=(cls,name,arr,fmt)=>{ arr=(arr||[]).filter(Boolean); if(!arr.length) return ''; return `<div class="sec ${cls}"><div class="sh"><span class="sn">${name}</span><span class="sc">${arr.length}</span></div>${arr.map(fmt).join('')}</div>`; };
+
+  h+=listSec('a-cyan','Roads & routes',(d.roads||[]).slice(0,6),itemFmt);
+  h+=listSec('a-green','Landmarks to place',(d.landmarks||[]).slice(0,6),itemFmt);
+  h+=listSec('a-green','Natural features',(d.nature||[]).slice(0,4),itemFmt);
+  h+=listSec('a-magenta','Districts',(d.districts||[]).slice(0,5),itemFmt);
+  h+=listSec('a-cyan','Legend / symbols',(d.legend||[]).slice(0,6),x=>`<div class="item"><div class="nm">${esc(x.sym)}</div>${x.means?`<div class="ds">${esc(x.means)}</div>`:''}</div>`);
+
+  const notes=[];
+  if(d.title_banner) notes.push(['Title banner',d.title_banner]);
+  if(d.shape) notes.push(['City shape',d.shape]);
+  if(d.frame) notes.push(['Frame & background',d.frame]);
+  if(d.extras) notes.push(['Decorative extras',d.extras]);
+  if(notes.length){
+    h+=`<div class="sec a-amber"><div class="sh"><span class="sn">Map treatment</span><span class="sc">the look &amp; furniture</span></div><div class="twogrid">`+notes.map(([k,v])=>`<div class="noteblk"><div class="nk">${esc(k)}</div><div class="nv">${esc(v)}</div></div>`).join('')+`</div></div>`;
+  }
+
+  const vf=(d.verify||[]).map(x=>typeof x==='string'?{what:x}:x).filter(x=>x&&x.what).slice(0,5);
+  if(vf.length){
+    h+=`<div class="sec a-magenta"><div class="sh"><span class="sn">Go verify</span><span class="sc">built from model memory · spot-check before you draw</span></div>${vf.map(x=>`<div class="item"><div class="nm">${esc(x.what)}</div>${x.where?`<div class="ds"><span style="font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--magenta)">check &rsaquo;</span> ${esc(x.where)}</div>`:''}</div>`).join('')}</div>`;
+  }
+  return h;
+}
+
 function bodyHTML(d){
+  if(d.directions||d.roads||d.title_banner) return mapBodyHTML(d);
   let h='';
   h+=`<div class="kithead"><div class="kc">${esc(d.city||lastCity)} — Illustration Kit</div>${d.read?`<div class="kr">${esc(d.read)}</div>`:''}</div>`;
   if(d.only_here) h+=`<div class="onlyhere"><div class="k">Only here</div><div class="v">${esc(d.only_here)}</div></div>`;
@@ -486,6 +561,7 @@ async function snapshot(){
   try{
     await new Promise(r=>setTimeout(r,20));
     const d=lastData;
+    const isMap=!!(d.directions||d.roads||d.title_banner);
     const {jsPDF}=window.jspdf;
     const P=new jsPDF({unit:'pt',format:'letter',compress:true});
     const PW=P.internal.pageSize.getWidth();   // 612
@@ -561,7 +637,7 @@ async function snapshot(){
     setF('bold',48,C.white); P.text('CITYSCOPE',M,y); y+=18;
     P.setDrawColor(0,90,108); P.setLineWidth(0.8); P.line(M,y,M+CW,y); y+=30;
     setF('bold',22,C.white); const cl=P.splitTextToSize(String(d.city||lastCity),CW); for(const ln of cl){ P.text(ln,M,y); y+=25; }
-    y+=2; setF('mono',11,C.amber); P.text('ILLUSTRATION KIT',M,y); y+=20;
+    y+=2; setF('mono',11,C.amber); P.text(isMap?'MAP KIT':'ILLUSTRATION KIT',M,y); y+=20;
     setF('mono',8.5,C.muted); P.text(String(prettyStamp()).toUpperCase(),M,y); y+=28;
     if(d.read){ para(d.read,M,11.5,'normal',C.text,CW-30,16); }
     if(d.only_here){
@@ -575,6 +651,45 @@ async function snapshot(){
 
     // ---------- BODY ----------
     nl();
+    if(isMap){
+      const plainItem=(it,accent)=>{
+        const padX=12,padT=9,padB=9;
+        setF('bold',10.5,C.white); const tL=P.splitTextToSize(String(it.n||''),CW-2*padX);
+        setF('normal',9.3,C.text); const dL= it.d?P.splitTextToSize(String(it.d),CW-2*padX):[];
+        const cardH=padT+tL.length*13+(dL.length?dL.length*12.2+2:0)+padB;
+        need(cardH);
+        P.setFillColor.apply(P,C.panel); P.rect(M,y,CW,cardH,'F');
+        P.setFillColor(accent[0],accent[1],accent[2]); P.rect(M,y,3,cardH,'F');
+        let ty=y+padT; setF('bold',10.5,C.white); for(const ln of tL){ P.text(ln,M+padX,ty+8.6); ty+=13; }
+        if(dL.length){ ty+=2; setF('normal',9.3,C.text); for(const ln of dL){ P.text(ln,M+padX,ty+8); ty+=12.2; } }
+        y+=cardH+8;
+      };
+      const listSec=(name,arr,accent,fmt)=>{ arr=(arr||[]).filter(Boolean); if(!arr.length) return; sectionHead(name,String(arr.length),accent); arr.forEach(x=>plainItem(fmt(x),accent)); };
+
+      if(d.anchor&&(d.anchor.n||d.anchor.d)){
+        const aTxt=(d.anchor.n||'')+(d.anchor.d?' — '+d.anchor.d:'');
+        setF('normal',11,C.white); const aL=P.splitTextToSize(aTxt,CW-32); const boxH=16+14+aL.length*14+14; need(boxH);
+        P.setFillColor(6,20,26); P.rect(M,y,CW,boxH,'F'); P.setFillColor.apply(P,C.cyan); P.rect(M,y,3,boxH,'F');
+        let by=y+18; setF('mono',8.5,C.cyan); P.text('MAP ANCHOR',M+16,by); by+=16;
+        setF('normal',11,C.white); for(const ln of aL){ P.text(ln,M+16,by); by+=14; } y+=boxH+6;
+      }
+
+      const dirs=(d.directions||[]).filter(x=>x&&x.to).slice(0,6);
+      if(dirs.length){ sectionHead('Directional arrows','the "which way to…" callouts',C.amber);
+        dirs.forEach(x=>plainItem({n:((x.dir||'').toUpperCase()+'  ·  '+x.to).trim(), d:x.note}, C.amber)); }
+
+      listSec('Roads & routes',(d.roads||[]).slice(0,6),C.cyan,x=>x);
+      listSec('Landmarks to place',(d.landmarks||[]).slice(0,6),C.green,x=>x);
+      listSec('Natural features',(d.nature||[]).slice(0,4),C.green,x=>x);
+      listSec('Districts',(d.districts||[]).slice(0,5),C.magenta,x=>x);
+      listSec('Legend / symbols',(d.legend||[]).slice(0,6),C.cyan,x=>({n:x.sym,d:x.means}));
+
+      if(d.title_banner||d.shape||d.frame||d.extras){ sectionHead('Map treatment','the look & furniture',C.amber);
+        labeledBlock('Title banner',d.title_banner,C.amber);
+        labeledBlock('City shape',d.shape,C.amber);
+        labeledBlock('Frame & background',d.frame,C.amber);
+        labeledBlock('Decorative extras',d.extras,C.amber); }
+    } else {
     scoredSection('Hero images',d.hero,5,C.amber);
     scoredSection('Supporting icons',d.icons,10,C.cyan);
     scoredSection('Weird little things',d.weird,5,C.magenta);
@@ -626,7 +741,9 @@ async function snapshot(){
       labeledBlock('Guide cover',d.cover,C.green);
     }
 
-    // Go verify
+    }
+
+    // Go verify (both modes)
     const vf=(d.verify||[]).map(x=>typeof x==='string'?{what:x}:x).filter(x=>x&&x.what).slice(0,5);
     if(vf.length){ sectionHead('Go verify','built from model memory · spot-check before you draw',C.magenta);
       vf.forEach(x=>{ setF('bold',10,C.white); const wL=P.splitTextToSize(String(x.what),CW-14);
