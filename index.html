@@ -342,6 +342,27 @@ Return ONLY valid JSON, no markdown, in EXACTLY this shape:
 }
 CAPS (hard maximums — return fewer if you don't genuinely know them): directions up to 6, roads up to 6, landmarks up to 6, nature up to 4, districts up to 5, legend up to 6, verify 3-5. Any road, distance, or nearby town you're not sure of goes in "verify", not stated as fact.`;
 
+const DEEP_INSTRUCTION = `You are CITYSCOPE in DEEP mode. Use web search to dig up SURPRISING, VERIFIABLE, drawable specifics about this city — the stuff even a local historian might not have top of mind. This is NOT a broad tourism list; it is a short set of real gems an illustrator can start drawing from.
+
+SEARCH DISCIPLINE (stay fast — you have a hard time budget): do AT MOST 4-5 targeted searches, then STOP and write. Good searches: the city's Wikipedia page; its founding / history; "unusual OR little-known OR weird [city name]"; one for local visual specifics (a monument, mural, sign, or oddity). Don't over-search.
+
+RULES:
+- Every item must be VERIFIED by something you actually found in search — not recalled from memory. If you can't verify it, leave it out.
+- Prefer the OBSCURE and specific over the obvious: a founding oddity, a forgotten industry, a strange local ordinance, a little-known monument, an unusual name origin, a real local legend with a source. The test: would this make someone who grew up there say "how did you know THAT?"
+- NO REGIONAL BLEED: never attribute a neighboring city's trait (a Korean corridor, a famous scene, an industry) to THIS city unless a source ties it specifically HERE.
+- Name real proper nouns — people, places, dates, businesses — and keep each detail drawable.
+
+Return ONLY valid JSON, no markdown, no preamble:
+{
+ "city":"Full city, region",
+ "read":"1-2 sentences: what actually makes this place distinct, grounded in what you found",
+ "only_here":"the single most surprising verified detail — the 'how did you know THAT?' one",
+ "finds":[{"n":"the thing to draw","d":"the surprising verified detail + why it's drawable","src":"where you verified it, e.g. Wikipedia / city site / a named news outlet"}],
+ "palette":[{"name":"color name","hex":"#rrggbb","note":"where this color lives in town"}],
+ "verify":[{"what":"anything you're only partly sure of","where":"where to confirm it"}]
+}
+CAPS: finds 6-10 (this is the core — make each one count and drawable), palette 4-6, verify 2-4. Keep it tight and fast so it returns quickly.`;
+
 async function run(){
   const city=cityEl.value.trim();
   if(!city){ setStatus('Type a city name first.',true); return; }
@@ -356,11 +377,10 @@ async function run(){
   setStatus('<span class="scan">'+(deep?'Searching the web + scoping':'Scoping the city')+'</span>');
 
   try{
-    const prompt = isMap ? MAP_INSTRUCTION : (lite ? LITE_INSTRUCTION : INSTRUCTION);
+    const prompt = deep ? DEEP_INSTRUCTION : (isMap ? MAP_INSTRUCTION : (lite ? LITE_INSTRUCTION : INSTRUCTION));
     let task = prompt + `\n\nCITY: ${city}`;
-    if(deep) task += `\n\nUse web search to VERIFY specifics before listing them — check the city's Wikipedia page, its official government site, and local news for the real founding history, landmarks, notable people, food, businesses, and cultural makeup. Prefer verified real details over anything you recall from memory; do NOT assume a neighboring city's traits apply here. After searching, return ONLY the final JSON described above and nothing else.`;
-    const body={ model:MODEL, max_tokens: lite?900:8000, messages:[{role:'user',content:task}] };
-    if(deep) body.tools=[{type:'web_search_20250305',name:'web_search'}];
+    const body={ model:MODEL, max_tokens: deep?3000:(lite?900:8000), messages:[{role:'user',content:task}] };
+    if(deep) body.tools=[{type:'web_search_20250305',name:'web_search',max_uses:5}];
     const res=await fetch(WORKER,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!res.ok) throw new Error('Worker returned '+res.status);
     const data=await res.json();
@@ -402,6 +422,7 @@ function normItem(it){
   const q=pickKey(it,['q','quirk','quirkiness','quirky']); if(q!=null)o.q=q;
   const diff=pickKey(it,['diff','difficulty']); if(diff!=null)o.diff=diff;
   const use=pickKey(it,['use','best_use','bestUse','bestuse','usage']); if(use!=null)o.use=use;
+  const src=pickKey(it,['src','source','sources','where','ref','citation']); if(src!=null)o.src=src;
   return o;
 }
 function hasScore(it){ return it.v!=null||it.l!=null||it.r!=null||it.q!=null; }
@@ -490,7 +511,29 @@ function mapBodyHTML(d){
   return h;
 }
 
+function deepBodyHTML(d){
+  let h='';
+  h+=`<div class="kithead"><div class="kc">${esc(d.city||lastCity)} — Deep Finds</div>${d.read?`<div class="kr">${esc(d.read)}</div>`:''}</div>`;
+  if(d.only_here) h+=`<div class="onlyhere"><div class="k">Only here</div><div class="v">${esc(d.only_here)}</div></div>`;
+  const finds=(d.finds||[]).filter(x=>x&&x.n).slice(0,10);
+  if(finds.length){
+    h+=`<div class="sec a-magenta"><div class="sh"><span class="sn">Verified finds</span><span class="sc">web-checked · ${finds.length}</span></div>`;
+    h+=finds.map(x=>`<div class="item"><div class="nm">${esc(x.n)}</div>${x.d?`<div class="ds">${esc(x.d)}</div>`:''}${x.src?`<div class="ds" style="margin-top:5px"><span style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--green)">source ›</span> <span style="color:var(--muted)">${esc(x.src)}</span></div>`:''}</div>`).join('');
+    h+=`</div>`;
+  }
+  const pal=(d.palette||[]).filter(x=>x&&x.hex).slice(0,6);
+  if(pal.length){
+    h+=`<div class="sec a-cyan"><div class="sh"><span class="sn">Color inspiration</span><span class="sc">click to copy hex</span></div><div class="swatches">${pal.map(x=>`<div class="sw" data-hex="${esc(x.hex)}"><div class="chip-c" style="background:${esc(x.hex)}"></div><div class="meta"><div class="cn">${esc(x.name||'')}</div><div class="hx">${esc(x.hex)}</div>${x.note?`<div class="nt" style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.3">${esc(x.note)}</div>`:''}</div></div>`).join('')}</div></div>`;
+  }
+  const vf=(d.verify||[]).map(x=>typeof x==='string'?{what:x}:x).filter(x=>x&&x.what).slice(0,5);
+  if(vf.length){
+    h+=`<div class="sec a-magenta"><div class="sh"><span class="sn">Go verify</span><span class="sc">still worth a human check</span></div>${vf.map(x=>`<div class="item"><div class="nm">${esc(x.what)}</div>${x.where?`<div class="ds"><span style="font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--magenta)">check &rsaquo;</span> ${esc(x.where)}</div>`:''}</div>`).join('')}</div>`;
+  }
+  return h;
+}
+
 function bodyHTML(d){
+  if(d.finds) return deepBodyHTML(d);
   if(d.directions||d.roads||d.title_banner) return mapBodyHTML(d);
   let h='';
   h+=`<div class="kithead"><div class="kc">${esc(d.city||lastCity)} — Illustration Kit</div>${d.read?`<div class="kr">${esc(d.read)}</div>`:''}</div>`;
@@ -542,7 +585,7 @@ function bodyHTML(d){
 function pickKey(o,keys){ for(const k of keys){ if(o&&o[k]!=null&&o[k]!=='') return o[k]; } return undefined; }
 function normalizeData(d){
   if(!d||typeof d!=='object') return d;
-  ['hero','icons','weird','people','nature','map','landmarks','roads','districts'].forEach(k=>{ if(Array.isArray(d[k])) d[k]=d[k].map(normItem); });
+  ['hero','icons','weird','people','nature','map','landmarks','roads','districts','finds'].forEach(k=>{ if(Array.isArray(d[k])) d[k]=d[k].map(normItem); });
   if(Array.isArray(d.legend)) d.legend=d.legend.map(x=> typeof x==='string'?{sym:x}:{sym:pickKey(x,['sym','symbol','icon','n','name']),means:pickKey(x,['means','meaning','d','desc','description'])});
   if(Array.isArray(d.lettering)) d.lettering=d.lettering.map(x=> typeof x==='string'?{phrase:x}:{phrase:pickKey(x,['phrase','text','n','name','word']),note:pickKey(x,['note','d','desc','treatment','description'])});
   if(Array.isArray(d.palette)) d.palette=d.palette.map(x=> typeof x==='string'?{name:x,hex:''}:{name:pickKey(x,['name','n','label'])||'',hex:pickKey(x,['hex','color','value','code'])||'',note:pickKey(x,['note','d','desc','description'])});
@@ -595,6 +638,7 @@ async function snapshot(){
     await new Promise(r=>setTimeout(r,20));
     const d=lastData;
     const isMap=!!(d.directions||d.roads||d.title_banner);
+    const isDeep=!!d.finds;
     const {jsPDF}=window.jspdf;
     const P=new jsPDF({unit:'pt',format:'letter',compress:true});
     const PW=P.internal.pageSize.getWidth();   // 612
@@ -670,7 +714,7 @@ async function snapshot(){
     setF('bold',48,C.white); P.text('CITYSCOPE',M,y); y+=18;
     P.setDrawColor(0,90,108); P.setLineWidth(0.8); P.line(M,y,M+CW,y); y+=30;
     setF('bold',22,C.white); const cl=P.splitTextToSize(String(d.city||lastCity),CW); for(const ln of cl){ P.text(ln,M,y); y+=25; }
-    y+=2; setF('mono',11,C.amber); P.text(isMap?'MAP KIT':'ILLUSTRATION KIT',M,y); y+=20;
+    y+=2; setF('mono',11,C.amber); P.text(isDeep?'DEEP FINDS':(isMap?'MAP KIT':'ILLUSTRATION KIT'),M,y); y+=20;
     setF('mono',8.5,C.muted); P.text(String(prettyStamp()).toUpperCase(),M,y); y+=28;
     if(d.read){ para(d.read,M,11.5,'normal',C.text,CW-30,16); }
     if(d.only_here){
@@ -684,7 +728,43 @@ async function snapshot(){
 
     // ---------- BODY ----------
     nl();
-    if(isMap){
+    if(isDeep){
+      const finds=(d.finds||[]).filter(x=>x&&x.n).slice(0,10);
+      if(finds.length){ sectionHead('Verified finds','web-checked · '+finds.length,C.magenta);
+        finds.forEach(it=>{
+          const padX=12,padT=10,padB=10;
+          setF('bold',10.5,C.white); const tL=P.splitTextToSize(String(it.n||''),CW-2*padX);
+          setF('normal',9.3,C.text); const dL=it.d?P.splitTextToSize(String(it.d),CW-2*padX):[];
+          const sL=it.src?P.splitTextToSize('source \u203A '+String(it.src),CW-2*padX):[];
+          const cardH=padT+tL.length*13+(dL.length?dL.length*12.2+3:0)+(sL.length?sL.length*11+4:0)+padB;
+          need(cardH);
+          P.setFillColor.apply(P,C.panel); P.rect(M,y,CW,cardH,'F');
+          P.setFillColor.apply(P,C.magenta); P.rect(M,y,3,cardH,'F');
+          let ty=y+padT; setF('bold',10.5,C.white); for(const ln of tL){ P.text(ln,M+padX,ty+8.6); ty+=13; }
+          if(dL.length){ ty+=3; setF('normal',9.3,C.text); for(const ln of dL){ P.text(ln,M+padX,ty+8); ty+=12.2; } }
+          if(sL.length){ ty+=4; setF('mono',8,C.green); for(const ln of sL){ P.text(ln,M+padX,ty+7); ty+=11; } }
+          y+=cardH+8;
+        });
+      }
+      const pal=(d.palette||[]).filter(x=>x&&x.hex).slice(0,6);
+      if(pal.length){ sectionHead('Color inspiration','',C.cyan);
+        const per=3, gap=10, sw=(CW-gap*(per-1))/per;
+        for(let i=0;i<pal.length;i+=per){
+          const row=pal.slice(i,i+per); const cells=[]; let rowH=0;
+          row.forEach(x=>{ setF('bold',8.6,C.white); const nmL=P.splitTextToSize(String(x.name||''),sw-6).slice(0,2);
+            setF('normal',7.4,C.muted); const ntL=x.note?P.splitTextToSize(String(x.note),sw-6).slice(0,3):[];
+            const h=22+4+nmL.length*10+10+(ntL.length?ntL.length*8.4+2:0)+6; cells.push({x,nmL,ntL,h}); rowH=Math.max(rowH,h); });
+          need(rowH+8);
+          row.forEach((x,j)=>{ const cx=M+j*(sw+gap); const cell=cells[j];
+            const rgb=hexRGB(x.hex)||[40,40,40]; P.setFillColor(rgb[0],rgb[1],rgb[2]); P.rect(cx,y,sw,22,'F');
+            let cy=y+22+4; setF('bold',8.6,C.white); for(const ln of cell.nmL){ P.text(ln,cx,cy+7); cy+=10; }
+            setF('mono',8,C.muted); P.text(String(x.hex),cx,cy+6); cy+=12;
+            if(cell.ntL.length){ setF('normal',7.4,C.muted); for(const ln of cell.ntL){ P.text(ln,cx,cy+6); cy+=8.4; } }
+          });
+          y+=rowH+8;
+        }
+      }
+    } else if(isMap){
       const plainItem=(it,accent)=>{
         const padX=12,padT=9,padB=9;
         setF('bold',10.5,C.white); const tL=P.splitTextToSize(String(it.n||''),CW-2*padX);
