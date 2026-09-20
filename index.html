@@ -245,56 +245,33 @@ const cityEl=$('city'), statusEl=$('status'), outEl=$('out'), goEl=$('go'), dept
 
 const LENS_TEXT = LENSES.map(([n,d])=>`- ${n}: ${d}`).join('\n');
 
-const INSTRUCTION = `You are CITYSCOPE, a research scout for an illustrator building an ILLUSTRATED CITY GUIDE. You are NOT writing a tourism brochure. Your job is to find the VISUAL SOUL of a place — the specific, drawable things that make it unmistakable — and hand back a curated, scored kit an illustrator can start drawing from immediately.
+const INSTRUCTION = `You are CITYSCOPE in STANDARD mode — a research scout for an illustrator building a city guide. Use web search to ground your answer in what's actually true of THIS city, then hand back a tight, scored kit an illustrator can start drawing from. This is the middle tier: richer than a quick name list, lighter than a deep dive — so keep it lean.
 
-LOOK THROUGH ALL OF THESE LENSES (they are how you hunt, not the output shape):
-${LENS_TEXT}
+SEARCH DISCIPLINE (stay fast — hard time budget): do AT MOST 4-5 targeted searches (the city's Wikipedia page; what it's known for / landmarks; local visual specifics like signs, murals, notable buildings), then STOP and write.
 
-RULES THAT SEPARATE THIS FROM A BROCHURE:
-- THE NAME-SWAP TEST (most important rule): before you keep any item, ask "if I pasted a DIFFERENT city's name over this, would it still read as true?" If yes, DELETE IT. Every item must be false for other cities. A kit that could describe any American town is a failed kit.
-- BANNED unless carrying a detail unique to THIS city: courthouse, city hall, water tower, Main Street, "historic downtown", farmers market, local diner, "a mural", coffee shop, town square, welcome sign, generic river/park. These appear in every town; they are only allowed if you attach a specific name, date, quirk, or story that makes this one different (a real street name, a real business, a real person, a real event).
-- NAME NAMES. Real proper nouns are the signal of real knowledge: specific street names, business names, people, landmarks, festivals, roads. An item with zero proper nouns and zero specific detail is almost always generic filler — cut it.
-- CONFIDENCE GATE: for each item silently ask "do I actually know this specific thing about THIS exact city, or drop it. Do NOT invent a plausible-sounding landmark, statue, or festival to fill a slot.
-- NO REGIONAL BLEED (critical): do NOT assume a cultural community, cuisine, ethnicity, industry, or demographic trait that belongs to the broader metro area or a NEIGHBORING city applies to THIS city. Such traits cluster in specific towns, not evenly across a region — a Korean grocery corridor, a famous BBQ or music scene, a tech hub, a college-town vibe are concentrated somewhere specific. If you cannot confidently say a trait is concentrated in THIS exact city (not just its region), do NOT state it as fact: either omit it, or move it to "verify" phrased as a question ("confirm whether X is actually in THIS city vs. nearby towns"). Two neighboring suburbs should NOT come back with the same cultural profile unless you truly know they share it.
-- FEWER, REALER. The caps below are hard MAXIMUMS, not targets. Three items you genuinely know beat ten you padded. Returning 2 heroes and 4 icons for a city you know little about is the CORRECT behavior — a short honest kit is the goal, not a full generic one.
-- The example items inside the lenses and the JSON schema below are illustrations of the CATEGORY only — never reproduce them as answers.
-- Prefer things a LOCAL would recognize without a label over things a tourist board would list.
-- People are drawn as the OBJECT tied to them (the guitar, the diner booth, the invention), not as a portrait — put the person's name in the description.
-- Chase the "Only Here" test hardest: the one detail that makes someone who grew up there say "wait — how did you know about THAT?"
-- HONESTY: only assert specifics you're actually confident are true of THIS place. Better a true ordinary thing than a fabricated famous one, and better an empty slot than a generic one.
+RULES:
+- VERIFY, don't recall: prefer what search confirms over memory. If you can't verify a specific, leave it out or move it to "verify".
+- NAME-SWAP TEST: if an item would read true with a different city's name pasted over it, cut it. Every item must be specific to THIS city.
+- NO REGIONAL BLEED: never attribute a neighboring city's or the metro's trait (a Korean corridor, a famous scene, an industry) to THIS city unless a source ties it specifically here.
+- Name real proper nouns — streets, businesses, people, landmarks. People are drawn as the OBJECT tied to them (put the person's name in the description).
+- FEWER, REALER: the caps are maximums, not targets. A short true kit beats a padded one.
 
-SCORING (integers 1-5) for every visual item:
-- v = visual potential (how striking / drawable)
-- l = uniquely local (the "only here" factor — weight this highest)
-- r = recognizability (would a local ID it instantly)
-- q = quirkiness (how odd / memorable)
-Also: diff = "Easy" | "Med" | "Hard" (illustration difficulty), and use = "Spot" | "Map" | "Hero" | "Pattern" | "Type" | "BG" (best use).
+SCORING (integers 1-5) per visual item: v=visual potential, l=uniquely local, r=recognizability, q=quirkiness. Also diff="Easy"|"Med"|"Hard" and use="Spot"|"Hero"|"Pattern"|"Type"|"BG".
 
-Return the CURATED strongest ingredients, capped per section. Respond with ONLY valid JSON — no markdown, no preamble — in EXACTLY this shape:
+Return ONLY valid JSON, no markdown, no preamble:
 {
-  "city": "Full city, region",
-  "read": "1-2 sentences: what makes THIS city visually different from the towns right next to it — write this FIRST, then make sure every item below ladders up to it",
-  "only_here": "one sentence: the single strongest 'wait, how did you know about THAT?' detail",
-  "palette": [{"name":"color name","hex":"#rrggbb","note":"where this color actually lives in town"}],
-  "hero": [{"n":"name","d":"why it's a hero, specific","v":5,"l":5,"r":5,"q":3,"diff":"Med","use":"Hero"}],
-  "icons": [{"n":"name","d":"one specific line","v":4,"l":4,"r":4,"q":3,"diff":"Easy","use":"Spot"}],
-  "weird": [{"n":"name","d":"the odd true thing","v":4,"l":5,"r":3,"q":5,"diff":"Med","use":"Spot"}],
-  "people": [{"n":"the drawable object","d":"Person name + why they matter here","v":4,"l":4,"r":3,"q":3,"diff":"Med","use":"Spot"}],
-  "nature": [{"n":"name","d":"specific creature/plant/feature","v":4,"l":4,"r":3,"q":3,"diff":"Easy","use":"Spot"}],
-  "map": [{"n":"callout","d":"a 'which way to…' or landmark-for-directions relationship","v":3,"l":4,"r":4,"q":3,"diff":"Easy","use":"Map"}],
-  "lettering": [{"phrase":"WORDS TO HAND-LETTER","note":"treatment / where it comes from"}],
-  "eastereggs": ["a small historical detail to hide in the art"],
-  "shapes": "architectural shapes / recurring motifs worth repeating, 1-2 sentences",
-  "patterns": "local patterns or textures for fills & backgrounds, 1-2 sentences",
-  "map_route": "one illustrated-map route idea for this city",
-  "poster": "one poster composition idea",
-  "cover": "one city-guide cover idea",
-  "verify": [{"what":"the specific claim or detail in THIS kit you're least sure is true / current","where":"the concrete place a human should check it — e.g. the city's own site, the local paper, a local subreddit/Facebook group, the historical society, Google Street View for signage"}]
+ "city":"Full city, region",
+ "read":"1-2 sentences: what makes THIS city visually distinct, grounded in what you found",
+ "only_here":"one sentence: the single strongest 'how did you know THAT?' detail",
+ "hero":[{"n":"name","d":"why it's a hero, specific","v":5,"l":5,"r":5,"q":3,"diff":"Med","use":"Hero"}],
+ "icons":[{"n":"name","d":"one specific line","v":4,"l":4,"r":4,"q":3,"diff":"Easy","use":"Spot"}],
+ "weird":[{"n":"name","d":"the odd true thing","v":4,"l":5,"r":3,"q":5,"diff":"Med","use":"Spot"}],
+ "people":[{"n":"the drawable object","d":"Person name + why they matter here","v":4,"l":4,"r":3,"q":3,"diff":"Med","use":"Spot"}],
+ "lettering":[{"phrase":"WORDS TO HAND-LETTER","note":"treatment / where it comes from"}],
+ "palette":[{"name":"color name","hex":"#rrggbb","note":"where this color lives in town"}],
+ "verify":[{"what":"a claim worth a human double-check","where":"where to confirm it"}]
 }
-
-SELF-AUDIT for "verify": since you have no live web access, end by flagging the 3-5 items in the kit above that are MOST likely to be wrong, outdated, or that you're guessing at for this specific city — a business that may have closed, a festival that may not exist, a "fact" you're not certain of, or anything you'd want a local to confirm. ANY cultural/demographic/industry trait you assumed from the region rather than know for THIS specific city MUST appear here as a question, not in the kit as fact. Be honest about your own soft spots rather than listing generic research advice. If you're genuinely confident about everything, still name the 3 details most worth a human's spot-check.
-
-CAPS (hard MAXIMUMS, not targets — return fewer when you don't have that many genuinely city-specific items): hero up to 5, icons up to 10, weird up to 5, people up to 5, nature up to 5, map up to 5, lettering up to 5, eastereggs up to 3, palette 5-6, verify 3-5.`;
+CAPS: hero up to 5, icons up to 6, weird up to 4, people up to 3, lettering up to 4, palette 5, verify 2-4. Keep it tight so it returns quickly.`;
 
 const LITE_INSTRUCTION = `You are CITYSCOPE, a scout for an illustrator building a city guide. Find the specific, drawable things that make this place unmistakable — not a tourist list. THE NAME-SWAP TEST: if an item would still read true with a different city's name pasted over it, DELETE it. Banned unless carrying a detail unique to this city: courthouse, water tower, Main Street, historic downtown, farmers market, local diner, mural. Name real proper nouns — streets, businesses, people, events. Return FEWER real items rather than padding with generics; a short honest list beats a full generic one. Chase the one "only here" detail hardest. Only assert specifics you're confident are true; never invent a landmark to fill space.
 
@@ -314,33 +291,33 @@ Return ONLY valid JSON, no markdown. Each list item is a short string formatted 
 }
 Palette: 5 swatches. Keep every string tight.`;
 
-const MAP_INSTRUCTION = `You are CITYSCOPE in MAP mode — a scout for an illustrator drawing a fun, useful hand-lettered PICTORIAL city map: the city's outline, its town-center anchor, labeled roads with route shields, a handful of placed landmarks, and playful directional arrows pointing off the edge to nearby places. Gather everything needed to BUILD that map for this city.
+const MAP_INSTRUCTION = `You are CITYSCOPE in MAP mode — gathering the BASICS to draw a simple, useful pictorial city map. Use web search to get the real geography right. Keep it basic: you do NOT need exact road distances or drive times — you need what orients a map.
 
-HONESTY (accuracy matters most on a map):
-- THE NAME-SWAP TEST: if a detail would read true for a different city, cut it. Name REAL roads, REAL route numbers, REAL neighboring towns.
-- NO REGIONAL BLEED: don't assume a metro-wide or neighboring-city trait sits in THIS city.
-- Don't invent roads, exits, rivers, or districts. If unsure, move it to "verify" as a question rather than stating it.
+SEARCH DISCIPLINE (stay fast): do AT MOST 4-5 targeted searches (the city's Wikipedia/geography; its downtown & neighborhoods; main roads; what it's best known for), then STOP and write.
 
-THE SIGNATURE ELEMENT is the DIRECTIONAL ARROWS — the "which way to…" callouts pointing off the map edge to nearby cities and destinations, with the real road and a rough distance or vibe (e.g. "Atlanta — 45 min west on 78", "quickest way to the beach", "up 400 to the mountains"). Make these specific, correct, and fun.
+FOCUS ON:
+- the DOWNTOWN / center — roughly what bounds it (which streets or landmarks sit at its edges).
+- the main AREAS / neighborhoods, with ZIP codes where you can find them.
+- the LANDMARKS the town/city is best known for.
+- which DIRECTION nearby towns/cities lie — just the compass direction, NO distances or drive times.
+- the main ROADS / highways that cross it (names / route numbers, no drive times).
 
-Return ONLY valid JSON, no markdown, in EXACTLY this shape:
+RULES: verify via search; name real roads, real neighborhoods, real ZIPs, real neighboring towns; NO REGIONAL BLEED; if unsure, put it in "verify", not on the map.
+
+Return ONLY valid JSON, no markdown:
 {
  "city":"Full city, region",
- "read":"1-2 sentences: what makes THIS city's map distinct — its shape, where it sits, what it's near",
- "title_banner":"idea for the city-name banner / title lettering treatment",
- "shape":"the character of the city's outline/boundary to draw (blobby, long, notable shape)",
- "anchor":{"n":"the heart of the map — town center / main crossroads / downtown","d":"what to draw there"},
- "directions":[{"to":"nearby city or destination","dir":"N|S|E|W|NE|NW|SE|SW","note":"the real road + rough distance or vibe"}],
- "roads":[{"n":"road name or route number","d":"its role — main artery, the road locals orient by"}],
- "landmarks":[{"n":"landmark to place on the map","d":"what to draw, and roughly where in town"}],
- "nature":[{"n":"river / lake / hill / park / trail","d":"how it reads on the map"}],
- "districts":[{"n":"neighborhood or area","d":"character / where it sits"}],
- "legend":[{"sym":"a recurring map icon or symbol","means":"what it marks"}],
+ "read":"1-2 sentences: what makes this city's map distinct — its shape, where it sits, what it's near",
+ "anchor":{"n":"the downtown / center","d":"roughly what bounds it — the streets or landmarks at its edges"},
+ "districts":[{"n":"area / neighborhood","d":"where it sits + what it's known for; include the ZIP if known"}],
+ "landmarks":[{"n":"a landmark the city is known for","d":"what to draw, roughly where in town"}],
+ "directions":[{"to":"nearby city or town","dir":"N|S|E|W|NE|NW|SE|SW"}],
+ "roads":[{"n":"main road or route number","d":"its role — the spine, the cross route, the bypass"}],
+ "title_banner":"idea for the city-name banner / lettering treatment",
  "frame":"border, background color, and texture idea for the whole map",
- "extras":"compass rose, banner ribbons, scale bar, other decorative map furniture",
- "verify":[{"what":"the least-certain claim above","where":"where a human should check it"}]
+ "verify":[{"what":"any geography you're unsure of","where":"where to confirm — Google Maps, the city's GIS/zoning map, or Wikipedia"}]
 }
-CAPS (hard maximums — return fewer if you don't genuinely know them): directions up to 6, roads up to 6, landmarks up to 6, nature up to 4, districts up to 5, legend up to 6, verify 3-5. Any road, distance, or nearby town you're not sure of goes in "verify", not stated as fact.`;
+CAPS: districts up to 6, landmarks up to 6, directions up to 6, roads up to 5, verify 2-4. Basic and fast — the other modes cover the details.`;
 
 const DEEP_INSTRUCTION = `You are CITYSCOPE in DEEP mode. Use web search to dig up SURPRISING, VERIFIABLE, drawable specifics about this city — the stuff even a local historian might not have top of mind. This is NOT a broad tourism list; it is a short set of real gems an illustrator can start drawing from.
 
@@ -374,13 +351,13 @@ async function run(){
   const lite = mode==='lite';
   const isMap = mode==='map';
   const deep = mode==='deep';
-  setStatus('<span class="scan">'+(deep?'Searching the web + scoping':'Scoping the city')+'</span>');
+  setStatus('<span class="scan">'+(lite?'Scoping the city':'Searching the web + scoping')+'</span>');
 
   try{
     const prompt = deep ? DEEP_INSTRUCTION : (isMap ? MAP_INSTRUCTION : (lite ? LITE_INSTRUCTION : INSTRUCTION));
     let task = prompt + `\n\nCITY: ${city}`;
-    const body={ model:MODEL, max_tokens: deep?3000:(lite?900:8000), messages:[{role:'user',content:task}] };
-    if(deep) body.tools=[{type:'web_search_20250305',name:'web_search',max_uses:5}];
+    const body={ model:MODEL, max_tokens: deep?3000:(lite?900:5000), messages:[{role:'user',content:task}] };
+    if(!lite) body.tools=[{type:'web_search_20250305',name:'web_search',max_uses:5}];
     const res=await fetch(WORKER,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!res.ok) throw new Error('Worker returned '+res.status);
     const data=await res.json();
