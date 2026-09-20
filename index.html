@@ -191,6 +191,7 @@
       <select id="depth">
         <option value="lite">Lite &middot; names only (cheapest, ~800 tokens)</option>
         <option value="fast">Standard &middot; scored kit + research list</option>
+        <option value="deep">Deep &middot; web-verified (slower, most accurate)</option>
         <option value="map">Map &middot; everything to build an illustrated map</option>
       </select>
     </div>
@@ -345,18 +346,21 @@ async function run(){
   const city=cityEl.value.trim();
   if(!city){ setStatus('Type a city name first.',true); return; }
   goEl.disabled=true; outEl.style.display='none'; outEl.innerHTML='';
-  setStatus('<span class="scan">Scoping the city</span>');
 
   lastCity = city;
 
-  const mode = depthEl.value;            // 'lite' | 'fast' | 'map'
+  const mode = depthEl.value;            // 'lite' | 'fast' | 'deep' | 'map'
   const lite = mode==='lite';
   const isMap = mode==='map';
+  const deep = mode==='deep';
+  setStatus('<span class="scan">'+(deep?'Searching the web + scoping':'Scoping the city')+'</span>');
 
   try{
     const prompt = isMap ? MAP_INSTRUCTION : (lite ? LITE_INSTRUCTION : INSTRUCTION);
-    const task = prompt + `\n\nCITY: ${city}`;
+    let task = prompt + `\n\nCITY: ${city}`;
+    if(deep) task += `\n\nUse web search to VERIFY specifics before listing them — check the city's Wikipedia page, its official government site, and local news for the real founding history, landmarks, notable people, food, businesses, and cultural makeup. Prefer verified real details over anything you recall from memory; do NOT assume a neighboring city's traits apply here. After searching, return ONLY the final JSON described above and nothing else.`;
     const body={ model:MODEL, max_tokens: lite?900:8000, messages:[{role:'user',content:task}] };
+    if(deep) body.tools=[{type:'web_search_20250305',name:'web_search'}];
     const res=await fetch(WORKER,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!res.ok) throw new Error('Worker returned '+res.status);
     const data=await res.json();
@@ -388,7 +392,17 @@ function normItem(it){
     const parts=it.split(/\s+[\u2014\u2013-]\s+/);
     return parts.length>=2 ? {n:parts[0], d:parts.slice(1).join(' \u2014 ')} : {n:it};
   }
-  return it||{};
+  if(!it||typeof it!=='object') return {n:String(it)};
+  const o=Object.assign({},it);
+  o.n=pickKey(it,['n','name','title','label','item','thing']);
+  o.d=pickKey(it,['d','desc','description','detail','why','note','caption']);
+  const v=pickKey(it,['v','visual','visual_potential']); if(v!=null)o.v=v;
+  const l=pickKey(it,['l','local','uniquely_local','unique','locality']); if(l!=null)o.l=l;
+  const r=pickKey(it,['r','recognizable','recognizability','recog']); if(r!=null)o.r=r;
+  const q=pickKey(it,['q','quirk','quirkiness','quirky']); if(q!=null)o.q=q;
+  const diff=pickKey(it,['diff','difficulty']); if(diff!=null)o.diff=diff;
+  const use=pickKey(it,['use','best_use','bestUse','bestuse','usage']); if(use!=null)o.use=use;
+  return o;
 }
 function hasScore(it){ return it.v!=null||it.l!=null||it.r!=null||it.q!=null; }
 
@@ -410,6 +424,7 @@ function itemHTML(it){
 }
 
 function scoreSort(arr){
+  if(!Array.isArray(arr)) return [];
   return arr.slice().sort((a,b)=>{
     const sa=num(a.v)+num(a.l)*1.5+num(a.q)*0.8+num(a.r)*0.7;
     const sb=num(b.v)+num(b.l)*1.5+num(b.q)*0.8+num(b.r)*0.7;
@@ -524,7 +539,25 @@ function bodyHTML(d){
   return h;
 }
 
+function pickKey(o,keys){ for(const k of keys){ if(o&&o[k]!=null&&o[k]!=='') return o[k]; } return undefined; }
+function normalizeData(d){
+  if(!d||typeof d!=='object') return d;
+  ['hero','icons','weird','people','nature','map','landmarks','roads','districts'].forEach(k=>{ if(Array.isArray(d[k])) d[k]=d[k].map(normItem); });
+  if(Array.isArray(d.legend)) d.legend=d.legend.map(x=> typeof x==='string'?{sym:x}:{sym:pickKey(x,['sym','symbol','icon','n','name']),means:pickKey(x,['means','meaning','d','desc','description'])});
+  if(Array.isArray(d.lettering)) d.lettering=d.lettering.map(x=> typeof x==='string'?{phrase:x}:{phrase:pickKey(x,['phrase','text','n','name','word']),note:pickKey(x,['note','d','desc','treatment','description'])});
+  if(Array.isArray(d.palette)) d.palette=d.palette.map(x=> typeof x==='string'?{name:x,hex:''}:{name:pickKey(x,['name','n','label'])||'',hex:pickKey(x,['hex','color','value','code'])||'',note:pickKey(x,['note','d','desc','description'])});
+  if(Array.isArray(d.directions)) d.directions=d.directions.map(x=> typeof x==='string'?{to:x,dir:''}:{to:pickKey(x,['to','dest','destination','n','name','place']),dir:pickKey(x,['dir','direction','compass','heading'])||'',note:pickKey(x,['note','d','desc','description','detail'])});
+  if(d.anchor&&typeof d.anchor==='object') d.anchor={n:pickKey(d.anchor,['n','name','title','place']),d:pickKey(d.anchor,['d','desc','description','detail'])};
+  else if(typeof d.anchor==='string') d.anchor={n:d.anchor};
+  if(Array.isArray(d.verify)) d.verify=d.verify.map(x=> typeof x==='string'?{what:x}:{what:pickKey(x,['what','claim','item','n','desc','description']),where:pickKey(x,['where','check','source','how'])});
+  d.read=pickKey(d,['read','summary','overview','soul','intro']);
+  d.only_here=pickKey(d,['only_here','onlyHere','only','signature']);
+  ['title_banner','shape','frame','extras','shapes','patterns','map_route','poster','cover'].forEach(k=>{ if(d[k]!=null&&typeof d[k]!=='string') d[k]=String(d[k]); });
+  return d;
+}
+
 function render(d){
+  d=normalizeData(d);
   lastData=d;
   let html=bodyHTML(d);
   html+=`<div class="controls">
