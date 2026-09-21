@@ -59,6 +59,15 @@
   input.city:focus{border-color:var(--cyan);}
   input.city::placeholder{color:#3f4c5a;}
 
+  .uprow{margin-top:14px;display:none;align-items:center;gap:12px;flex-wrap:wrap;}
+  .file-btn{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber);
+      background:transparent;border:1px dashed rgba(255,176,0,.45);border-radius:3px;padding:11px 15px;cursor:pointer;transition:.18s;}
+  .file-btn:hover{background:rgba(255,176,0,.08);border-style:solid;}
+  input[type=file]{display:none;}
+  .fname{font-family:var(--mono);font-size:12px;color:var(--muted);}
+  .clearimg{color:var(--magenta);cursor:pointer;font-family:var(--mono);font-size:12px;text-decoration:underline;}
+  .preview{margin-top:10px;display:none;}
+  .preview img{max-height:170px;max-width:100%;border:1px solid var(--line);border-radius:3px;}
   .rebuild-row{margin-top:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .rebuild-row label{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--muted);text-transform:uppercase;}
   select{background:#020407;color:var(--cyan);border:1px solid rgba(0,229,255,.3);border-radius:3px;
@@ -186,6 +195,14 @@
     <label class="lbl">City · type a name</label>
     <input class="city" id="city" placeholder="e.g. Snellville, Georgia">
 
+    <div class="uprow" id="uprow">
+      <button class="file-btn" id="pick" type="button">&#9650; Add / take a photo</button>
+      <input type="file" id="file" accept="image/*">
+      <span class="fname" id="fname"></span>
+      <span class="clearimg" id="clearimg" style="display:none">clear</span>
+    </div>
+    <div class="preview" id="preview"><img id="pimg" alt="photo preview"></div>
+
     <div class="rebuild-row">
       <label for="depth">Depth</label>
       <select id="depth">
@@ -193,7 +210,7 @@
         <option value="fast">Standard &middot; scored kit + research list</option>
         <option value="deep">Deep &middot; web-verified (slower, most accurate)</option>
         <option value="map">Map &middot; everything to build an illustrated map</option>
-        <option value="object">Object &middot; one landmark, person, sign, or find</option>
+        <option value="object">Scanner &middot; identify one thing &mdash; add a photo</option>
       </select>
     </div>
 
@@ -229,7 +246,7 @@ const LENSES = [
   ["Only here","The detail that makes someone who grew up there gasp. The whole point."]
 ];
 
-let lastData=null, lastCity='';
+let lastData=null, lastCity='', imageData=null, mediaType=null;
 
 const $ = id => document.getElementById(id);
 const cityEl=$('city'), statusEl=$('status'), outEl=$('out'), goEl=$('go'), depthEl=$('depth');
@@ -346,6 +363,7 @@ const OBJECT_INSTRUCTION = `You are CITYSCOPE in OBJECT mode — a field compani
 SEARCH DISCIPLINE (stay fast): do AT MOST 4-5 targeted searches about this specific subject, then STOP and write.
 
 RULES:
+- If a PHOTO is attached, identify the subject from it FIRST (read any visible signs, names, or text in the image), then use web search to confirm what it is and gather the story. Trust the photo for how it actually looks.
 - VERIFY, don't recall: base everything on what search actually turns up about THIS specific subject. If you can't confirm it, put it in "verify".
 - Get the VISUAL right — an illustrator needs what it looks like: materials, colors, shape, distinctive features, era/style, condition.
 - Name real proper nouns — the real name, real people, real dates. If the subject is ambiguous, use the place context to pin the right one.
@@ -366,22 +384,25 @@ CAPS: visual 3-6, facts 2-5, palette 3-5, verify 2-4. Tight and fast.`;
 
 async function run(){
   const city=cityEl.value.trim();
-  if(!city){ setStatus('Type a city name first.',true); return; }
-  goEl.disabled=true; outEl.style.display='none'; outEl.innerHTML='';
-
-  lastCity = city;
-
   const mode = depthEl.value;            // 'lite' | 'fast' | 'deep' | 'map' | 'object'
   const lite = mode==='lite';
   const isMap = mode==='map';
   const deep = mode==='deep';
   const isObject = mode==='object';
-  setStatus('<span class="scan">'+(lite?'Scoping':(isObject?'Searching the web':'Searching the web + scoping'))+'</span>');
+  if(!city && !(isObject && imageData)){ setStatus(isObject?'Type what it is, or add a photo.':'Type a city name first.',true); return; }
+  goEl.disabled=true; outEl.style.display='none'; outEl.innerHTML='';
+
+  lastCity = city || '(from photo)';
+  setStatus('<span class="scan">'+(lite?'Scoping':(isObject?(imageData?'Identifying from photo':'Searching the web'):'Searching the web + scoping'))+'</span>');
 
   try{
     const prompt = deep ? DEEP_INSTRUCTION : (isObject ? OBJECT_INSTRUCTION : (isMap ? MAP_INSTRUCTION : (lite ? LITE_INSTRUCTION : INSTRUCTION)));
-    let task = prompt + `\n\n${isObject?'SUBJECT':'CITY'}: ${city}`;
-    const body={ model:MODEL, max_tokens: (deep||isObject)?3000:(lite?900:5000), messages:[{role:'user',content:task}] };
+    let task = prompt;
+    if(isObject && imageData) task += `\n\nA PHOTO of the subject is attached above. Identify what it is from the photo, then use web search to verify and expand. Use any typed text below as the name or location context.`;
+    task += `\n\n${isObject?'SUBJECT':'CITY'}: ${city || (isObject?'(identify from the attached photo)':'')}`;
+    let content = task;
+    if(isObject && imageData) content=[{type:'image',source:{type:'base64',media_type:mediaType,data:imageData}},{type:'text',text:task}];
+    const body={ model:MODEL, max_tokens: (deep||isObject)?3000:(lite?900:5000), messages:[{role:'user',content}] };
     if(!lite) body.tools=[{type:'web_search_20250305',name:'web_search',max_uses:5}];
     const res=await fetch(WORKER,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!res.ok) throw new Error('Worker returned '+res.status);
@@ -955,11 +976,46 @@ async function snapshot(){
 
 function hexRGB(h){ if(!h) return null; h=String(h).trim().replace('#',''); if(h.length===3) h=h.split('').map(c=>c+c).join(''); if(h.length!==6||/[^0-9a-f]/i.test(h)) return null; return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
 
-function newCity(){ cityEl.value=''; depthEl.value='lite'; outEl.style.display='none'; outEl.innerHTML=''; setStatus(''); window.scrollTo({top:0,behavior:'smooth'}); cityEl.focus(); }
+function newCity(){ cityEl.value=''; depthEl.value='lite'; clearImage(); syncMode(); outEl.style.display='none'; outEl.innerHTML=''; setStatus(''); window.scrollTo({top:0,behavior:'smooth'}); cityEl.focus(); }
 
 function setStatus(m,e){ statusEl.innerHTML=m; statusEl.className='status'+(e?' err':''); }
 
+// --- Scanner mode: photo capture (downscaled client-side for fast field upload) ---
+function clearImage(){ imageData=null; mediaType=null; const f=$('file'); if(f)f.value=''; $('preview').style.display='none'; $('fname').textContent=''; $('clearimg').style.display='none'; }
+function handleFile(f){
+  if(!f) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const img=new Image();
+    img.onload=()=>{
+      const max=1024; let w=img.width, h=img.height;
+      if(w>max||h>max){ const s=max/Math.max(w,h); w=Math.round(w*s); h=Math.round(h*s); }
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      let dataUrl; try{ dataUrl=cv.toDataURL('image/jpeg',0.85); }catch(e){ dataUrl=reader.result; }
+      imageData=dataUrl.split(',')[1]; mediaType='image/jpeg';
+      $('pimg').src=dataUrl; $('preview').style.display='block';
+      $('fname').textContent=f.name||'photo'; $('clearimg').style.display='inline';
+    };
+    img.onerror=()=>setStatus('Could not read that image — try another.',true);
+    img.src=reader.result;
+  };
+  reader.readAsDataURL(f);
+}
+function syncMode(){
+  const obj = depthEl.value==='object';
+  $('uprow').style.display = obj?'flex':'none';
+  cityEl.placeholder = obj ? 'e.g. the Big Chicken, Marietta GA — or just add a photo' : 'e.g. Snellville, Georgia';
+  goEl.textContent = obj ? 'Scan it' : 'Scope the city';
+  if(!obj) clearImage();
+}
+
 goEl.addEventListener('click',run);
+depthEl.addEventListener('change',syncMode);
+$('pick').addEventListener('click',()=>$('file').click());
+$('clearimg').addEventListener('click',clearImage);
+$('file').addEventListener('change',e=>handleFile(e.target.files[0]));
+syncMode();
 cityEl.addEventListener('keydown',e=>{ if(e.key==='Enter') run(); });
 </script>
 </body>
