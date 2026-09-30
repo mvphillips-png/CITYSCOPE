@@ -383,30 +383,27 @@ Return ONLY valid JSON, no markdown, no preamble:
 }
 CAPS: visual 3-6, facts 2-5, palette 3-5, verify 2-4. Tight and fast.`;
 
-const FOLK_INSTRUCTION = `You are CITYSCOPE in FOLK ARTIST mode — a creative-brief companion for a folk artist who finds the extraordinary in ordinary modern American life. This is NOT about imitating traditional folk-art SUBJECTS (no barns, weathervanes, eagles, or antique-quilt clichés). It is about applying the folk-art WAY OF SEEING to everyday contemporary scenes: a kitchen table after breakfast, a gas station at dusk, a backyard chair, a motel sign, a roadside fruit stand, a high-school track, a parking lot, a porch, the grocery-cart return. The reverent attention folk art paid to daily life, turned on the daily life we actually live now.
+const FOLK_INSTRUCTION = `You are CITYSCOPE in FOLK ARTIST mode — a scene-finder for a folk artist who paints the extraordinary in ordinary modern American life. This is NOT about imitating traditional folk-art SUBJECTS (no barns, weathervanes, eagles, or antique-quilt clichés). It is the folk-art WAY OF SEEING — reverent, flat, patterned, unhurried attention — turned on the everyday life we actually live now: a kitchen table after breakfast, a gas station at dusk, a backyard chair, a motel sign, a roadside fruit stand, a high-school track, a parking lot, a porch, the grocery-cart return.
 
-You do NOT need web search — draw on what you know about folk art and about ordinary American places. If a place is given, TINT the scenes toward that place's ordinary life — but keep the tint ATMOSPHERIC only: its light, weather, seasons, vegetation, terrain, and the general texture of everyday places there (the kind of gas station, the kind of porch). Do NOT assert specific named businesses, streets, people, festivals, or cultural/demographic claims about the place unless they are genuinely well-known landmarks — when unsure, stay general rather than inventing a specific, and never carry a neighboring city's or the region's trait onto this one. A wrong atmospheric tint is harmless; a made-up specific is not. If no place is given, keep the scenes universal American-ordinary.
+CRITICAL — SPECIFIC TO THIS CITY, NOT GENERIC: when a place is given you MUST use web search to find the REAL, specific, ordinary places and daily rituals of THAT exact city, and build each scene around a real one. Generic Americana ("a gas station at dusk") is a FAILURE here — the artist already knows those. Instead: the actual downtown square and its real courthouse or old buildings; the real main drag by name; a beloved local diner, drive-in, hardware store, or produce stand that actually exists there; the real high school and its stadium; the county fair or a real local festival; the specific road everyone knows; the actual creek, mill, rail line, or water tower. Name the real place in the scene. A local should read a scene and think "that's OUR spot," not "that's any town."
 
-WHAT TO DELIVER:
-- A short, warm framing of the folk-art lens applied to modern ordinary life (the "read").
-- Why people are drawn to folk art — the emotional pull, briefly.
-- The PRINCIPLES that make an image read as folk art, phrased as things to DO (e.g. flatten the space, fill the frame with pattern, treat a humble object with reverence, let the hand show, tell a quiet story, favor frontal/naive perspective, warm limited palette).
-- SCENES — the core. A generous set of specific, drawable everyday scenes (build on the examples above and invent more in the same spirit). For each: what to put in the frame, the specific moment/light, and one line on why it sings as folk art.
-- Recurring MOTIFS — small everyday objects and patterns worth repeating across a body of work.
-- A warm, limited PALETTE suited to this way of seeing.
-- RENDER notes — how to actually make it look folk (line, texture, flatness, imperfection).
+SEARCH DISCIPLINE (stay fast — hard time budget): AT MOST 5 targeted searches (the city's downtown / historic district; "things to do / landmarks [city]"; a local-institutions or "old [city]" search; the high school / fairgrounds / main road), then STOP and write. Verify each named place actually exists in THIS city; if you can't confirm it, use a truer general version rather than inventing. NO REGIONAL BLEED — never borrow a neighboring city's or the region's specifics.
+
+Then apply the FOLK LENS to each real place: the humble moment, the light, what to flatten and pattern, why it deserves reverent attention.
+
+If NO place is given, skip search and give universal American-ordinary scenes instead.
 
 Return ONLY valid JSON, no markdown, no preamble:
 {
- "read":"1-2 sentences: the folk-art lens on modern ordinary life",
- "why":"1-2 sentences: why people are drawn to folk art",
- "principles":[{"n":"principle","d":"how to apply it, concretely"}],
- "scenes":[{"n":"the scene","d":"what to put in frame + the specific moment/light","why":"why it works as folk art"}],
- "motifs":["a small everyday object or pattern to repeat"],
- "palette":[{"name":"color name","hex":"#rrggbb","note":"where it lives in these scenes"}],
+ "read":"1-2 sentences: this city seen through the folk-art lens — what its ordinary life looks like",
+ "why":"1-2 sentences: why folk art's reverent attention suits this place",
+ "scenes":[{"n":"the scene, naming the REAL local place","d":"what to put in frame + the specific moment/light, grounded in the real spot","why":"the folk move — what to flatten, pattern, or revere","src":"where you verified this place exists"}],
+ "principles":[{"n":"folk-art principle","d":"how to apply it to these scenes"}],
+ "motifs":["a small real local object or pattern to repeat across the work"],
+ "palette":[{"name":"color name","hex":"#rrggbb","note":"where this color actually lives in this city"}],
  "render":"how to render it so it reads as folk art — line, texture, flatness, the hand showing"
 }
-CAPS: principles 4-6, scenes 8-12 (this is the heart — make each specific and drawable), motifs 5-8, palette 5-6. No web search; keep it warm and concrete.`;
+CAPS: scenes 8 (the heart — each built on a REAL, verified local place), principles 4, motifs 6, palette 5-6. Keep scene descriptions tight so the whole thing returns quickly.`;
 
 async function run(){
   const city=cityEl.value.trim();
@@ -420,18 +417,19 @@ async function run(){
   goEl.disabled=true; outEl.style.display='none'; outEl.innerHTML='';
 
   lastCity = city || (isFolk?'Folk Artist':'(from photo)');
-  setStatus('<span class="scan">'+(lite?'Scoping':(isFolk?'Composing scenes':(isObject?(imageData?'Identifying from photo':'Searching the web'):'Searching the web + scoping')))+'</span>');
+  const folkSearch = isFolk && !!city;   // Folk searches only when a city is given
+  setStatus('<span class="scan">'+(lite?'Scoping':(isFolk?(folkSearch?'Searching + composing scenes':'Composing scenes'):(isObject?(imageData?'Identifying from photo':'Searching the web'):'Searching the web + scoping')))+'</span>');
 
   try{
     const prompt = deep ? DEEP_INSTRUCTION : (isFolk ? FOLK_INSTRUCTION : (isObject ? OBJECT_INSTRUCTION : (isMap ? MAP_INSTRUCTION : (lite ? LITE_INSTRUCTION : INSTRUCTION))));
     let task = prompt;
     if(isObject && imageData) task += `\n\nA PHOTO of the subject is attached above. Identify what it is from the photo, then use web search to verify and expand. Use any typed text below as the name or location context.`;
-    if(isFolk){ task += city ? `\n\nPLACE (tint the scenes toward this place's ordinary life): ${city}` : `\n\n(No place given — keep the scenes universal American-ordinary.)`; }
+    if(isFolk){ task += city ? `\n\nPLACE: ${city}\nSearch the real ordinary places and daily rituals of THIS exact city and build every scene on a real, verified local spot — name it. No generic Americana.` : `\n\n(No place given — universal American-ordinary scenes, no search needed.)`; }
     else { task += `\n\n${isObject?'SUBJECT':'CITY'}: ${city || (isObject?'(identify from the attached photo)':'')}`; }
     let content = task;
     if(isObject && imageData) content=[{type:'image',source:{type:'base64',media_type:mediaType,data:imageData}},{type:'text',text:task}];
-    const body={ model:MODEL, max_tokens: isFolk?6000:((deep||isObject)?3000:(lite?900:5000)), messages:[{role:'user',content}] };
-    if(!lite && !isFolk) body.tools=[{type:'web_search_20250305',name:'web_search',max_uses:5}];
+    const body={ model:MODEL, max_tokens: isFolk?5000:((deep||isObject)?3000:(lite?900:5000)), messages:[{role:'user',content}] };
+    if((!lite && !isFolk) || folkSearch) body.tools=[{type:'web_search_20250305',name:'web_search',max_uses:5}];
     const res=await fetch(WORKER,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!res.ok) throw new Error('Worker returned '+res.status);
     const data=await res.json();
@@ -641,7 +639,7 @@ function folkBodyHTML(d){
   const scenes=(d.scenes||[]).filter(x=>x&&x.n).slice(0,12);
   if(scenes.length){
     h+=`<div class="sec a-cyan"><div class="sh"><span class="sn">Scenes to paint</span><span class="sc">the heart · ${scenes.length}</span></div>`;
-    h+=scenes.map(x=>`<div class="item"><div class="nm">${esc(x.n)}</div>${x.d?`<div class="ds">${esc(x.d)}</div>`:''}${x.why?`<div class="ds" style="margin-top:5px"><span style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--cyan)">folk ›</span> <span style="color:var(--muted)">${esc(x.why)}</span></div>`:''}</div>`).join('');
+    h+=scenes.map(x=>`<div class="item"><div class="nm">${esc(x.n)}</div>${x.d?`<div class="ds">${esc(x.d)}</div>`:''}${x.why?`<div class="ds" style="margin-top:5px"><span style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--cyan)">folk ›</span> <span style="color:var(--muted)">${esc(x.why)}</span></div>`:''}${x.src?`<div class="ds" style="margin-top:4px"><span style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--green)">real ›</span> <span style="color:var(--muted)">${esc(x.src)}</span></div>`:''}</div>`).join('');
     h+=`</div>`;
   }
   const prin=(d.principles||[]).filter(x=>x&&x.n).slice(0,6);
@@ -733,7 +731,7 @@ function normalizeData(d){
   d.what=pickKey(d,['what','summary','desc','description']);
   d.story=pickKey(d,['story','history','hook','background']);
   d.draw=pickKey(d,['draw','how_to_draw','illustration','suggestion']);
-  if(Array.isArray(d.scenes)) d.scenes=d.scenes.map(x=> typeof x==='string'?{n:x}:{n:pickKey(x,['n','name','title','scene']),d:pickKey(x,['d','desc','description','detail','frame']),why:pickKey(x,['why','folk','note','reason'])});
+  if(Array.isArray(d.scenes)) d.scenes=d.scenes.map(x=> typeof x==='string'?{n:x}:{n:pickKey(x,['n','name','title','scene']),d:pickKey(x,['d','desc','description','detail','frame']),why:pickKey(x,['why','folk','note','reason']),src:pickKey(x,['src','source','where','ref'])});
   if(Array.isArray(d.principles)) d.principles=d.principles.map(normItem);
   if(Array.isArray(d.motifs)) d.motifs=d.motifs.map(x=> typeof x==='string'?x:(pickKey(x,['n','name','d','desc','description'])||''));
   d.why=pickKey(d,['why','why_folk','appeal','pull']);
@@ -884,11 +882,13 @@ async function snapshot(){
           setF('bold',10.5,C.white); const tL=P.splitTextToSize(String(it.n||''),CW-2*padX);
           setF('normal',9.3,C.text); const dL=it.d?P.splitTextToSize(String(it.d),CW-2*padX):[];
           const wL2=it.why?P.splitTextToSize('folk \u203A '+String(it.why),CW-2*padX):[];
-          const cardH=padT+tL.length*13+(dL.length?dL.length*12.2+3:0)+(wL2.length?wL2.length*11+4:0)+padB;
+          const sL=it.src?P.splitTextToSize('real \u203A '+String(it.src),CW-2*padX):[];
+          const cardH=padT+tL.length*13+(dL.length?dL.length*12.2+3:0)+(wL2.length?wL2.length*11+4:0)+(sL.length?sL.length*11+3:0)+padB;
           need(cardH); P.setFillColor.apply(P,C.panel); P.rect(M,y,CW,cardH,'F'); P.setFillColor.apply(P,C.cyan); P.rect(M,y,3,cardH,'F');
           let ty=y+padT; setF('bold',10.5,C.white); for(const ln of tL){ P.text(ln,M+padX,ty+8.6); ty+=13; }
           if(dL.length){ ty+=3; setF('normal',9.3,C.text); for(const ln of dL){ P.text(ln,M+padX,ty+8); ty+=12.2; } }
           if(wL2.length){ ty+=4; setF('mono',8,C.cyan); for(const ln of wL2){ P.text(ln,M+padX,ty+7); ty+=11; } }
+          if(sL.length){ ty+=3; setF('mono',8,C.green); for(const ln of sL){ P.text(ln,M+padX,ty+7); ty+=11; } }
           y+=cardH+8; }); }
       const prin=(d.principles||[]).filter(x=>x&&x.n).slice(0,6);
       if(prin.length){ sectionHead('Folk-art principles','how to make it read as folk',C.green);
@@ -1144,7 +1144,7 @@ function syncMode(){
   const folk = m==='folk';
   $('uprow').style.display = obj?'flex':'none';
   cityEl.placeholder = obj ? 'e.g. the Big Chicken, Marietta GA — or just add a photo'
-    : folk ? 'optional — a place to tint the scenes, or leave blank'
+    : folk ? 'a city for real local scenes — or leave blank for universal'
     : 'e.g. Snellville, Georgia';
   goEl.textContent = obj ? 'Scan it' : folk ? 'Compose scenes' : 'Scope the city';
   if(!obj) clearImage();
