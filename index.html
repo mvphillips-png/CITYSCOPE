@@ -211,6 +211,7 @@
         <option value="deep">Deep &middot; web-verified (slower, most accurate)</option>
         <option value="map">Map &middot; everything to build an illustrated map</option>
         <option value="object">Scanner &middot; identify one thing &mdash; add a photo</option>
+        <option value="folk">Folk Artist &middot; everyday scenes to paint</option>
       </select>
     </div>
 
@@ -382,28 +383,55 @@ Return ONLY valid JSON, no markdown, no preamble:
 }
 CAPS: visual 3-6, facts 2-5, palette 3-5, verify 2-4. Tight and fast.`;
 
+const FOLK_INSTRUCTION = `You are CITYSCOPE in FOLK ARTIST mode — a creative-brief companion for a folk artist who finds the extraordinary in ordinary modern American life. This is NOT about imitating traditional folk-art SUBJECTS (no barns, weathervanes, eagles, or antique-quilt clichés). It is about applying the folk-art WAY OF SEEING to everyday contemporary scenes: a kitchen table after breakfast, a gas station at dusk, a backyard chair, a motel sign, a roadside fruit stand, a high-school track, a parking lot, a porch, the grocery-cart return. The reverent attention folk art paid to daily life, turned on the daily life we actually live now.
+
+You do NOT need web search — draw on what you know about folk art and about ordinary American places. If a place is given, TINT the scenes toward that place's specific ordinary life (its light, its plants, its kind of gas station); if no place is given, keep them universal American-ordinary.
+
+WHAT TO DELIVER:
+- A short, warm framing of the folk-art lens applied to modern ordinary life (the "read").
+- Why people are drawn to folk art — the emotional pull, briefly.
+- The PRINCIPLES that make an image read as folk art, phrased as things to DO (e.g. flatten the space, fill the frame with pattern, treat a humble object with reverence, let the hand show, tell a quiet story, favor frontal/naive perspective, warm limited palette).
+- SCENES — the core. A generous set of specific, drawable everyday scenes (build on the examples above and invent more in the same spirit). For each: what to put in the frame, the specific moment/light, and one line on why it sings as folk art.
+- Recurring MOTIFS — small everyday objects and patterns worth repeating across a body of work.
+- A warm, limited PALETTE suited to this way of seeing.
+- RENDER notes — how to actually make it look folk (line, texture, flatness, imperfection).
+
+Return ONLY valid JSON, no markdown, no preamble:
+{
+ "read":"1-2 sentences: the folk-art lens on modern ordinary life",
+ "why":"1-2 sentences: why people are drawn to folk art",
+ "principles":[{"n":"principle","d":"how to apply it, concretely"}],
+ "scenes":[{"n":"the scene","d":"what to put in frame + the specific moment/light","why":"why it works as folk art"}],
+ "motifs":["a small everyday object or pattern to repeat"],
+ "palette":[{"name":"color name","hex":"#rrggbb","note":"where it lives in these scenes"}],
+ "render":"how to render it so it reads as folk art — line, texture, flatness, the hand showing"
+}
+CAPS: principles 4-6, scenes 8-12 (this is the heart — make each specific and drawable), motifs 5-8, palette 5-6. No web search; keep it warm and concrete.`;
+
 async function run(){
   const city=cityEl.value.trim();
-  const mode = depthEl.value;            // 'lite' | 'fast' | 'deep' | 'map' | 'object'
+  const mode = depthEl.value;            // 'lite' | 'fast' | 'deep' | 'map' | 'object' | 'folk'
   const lite = mode==='lite';
   const isMap = mode==='map';
   const deep = mode==='deep';
   const isObject = mode==='object';
-  if(!city && !(isObject && imageData)){ setStatus(isObject?'Type what it is, or add a photo.':'Type a city name first.',true); return; }
+  const isFolk = mode==='folk';
+  if(!city && !(isObject && imageData) && !isFolk){ setStatus(isObject?'Type what it is, or add a photo.':'Type a city name first.',true); return; }
   goEl.disabled=true; outEl.style.display='none'; outEl.innerHTML='';
 
-  lastCity = city || '(from photo)';
-  setStatus('<span class="scan">'+(lite?'Scoping':(isObject?(imageData?'Identifying from photo':'Searching the web'):'Searching the web + scoping'))+'</span>');
+  lastCity = city || (isFolk?'Folk Artist':'(from photo)');
+  setStatus('<span class="scan">'+(lite?'Scoping':(isFolk?'Composing scenes':(isObject?(imageData?'Identifying from photo':'Searching the web'):'Searching the web + scoping')))+'</span>');
 
   try{
-    const prompt = deep ? DEEP_INSTRUCTION : (isObject ? OBJECT_INSTRUCTION : (isMap ? MAP_INSTRUCTION : (lite ? LITE_INSTRUCTION : INSTRUCTION)));
+    const prompt = deep ? DEEP_INSTRUCTION : (isFolk ? FOLK_INSTRUCTION : (isObject ? OBJECT_INSTRUCTION : (isMap ? MAP_INSTRUCTION : (lite ? LITE_INSTRUCTION : INSTRUCTION))));
     let task = prompt;
     if(isObject && imageData) task += `\n\nA PHOTO of the subject is attached above. Identify what it is from the photo, then use web search to verify and expand. Use any typed text below as the name or location context.`;
-    task += `\n\n${isObject?'SUBJECT':'CITY'}: ${city || (isObject?'(identify from the attached photo)':'')}`;
+    if(isFolk){ task += city ? `\n\nPLACE (tint the scenes toward this place's ordinary life): ${city}` : `\n\n(No place given — keep the scenes universal American-ordinary.)`; }
+    else { task += `\n\n${isObject?'SUBJECT':'CITY'}: ${city || (isObject?'(identify from the attached photo)':'')}`; }
     let content = task;
     if(isObject && imageData) content=[{type:'image',source:{type:'base64',media_type:mediaType,data:imageData}},{type:'text',text:task}];
-    const body={ model:MODEL, max_tokens: (deep||isObject)?3000:(lite?900:5000), messages:[{role:'user',content}] };
-    if(!lite) body.tools=[{type:'web_search_20250305',name:'web_search',max_uses:5}];
+    const body={ model:MODEL, max_tokens: (deep||isObject||isFolk)?3000:(lite?900:5000), messages:[{role:'user',content}] };
+    if(!lite && !isFolk) body.tools=[{type:'web_search_20250305',name:'web_search',max_uses:5}];
     const res=await fetch(WORKER,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!res.ok) throw new Error('Worker returned '+res.status);
     const data=await res.json();
@@ -581,7 +609,37 @@ function objectBodyHTML(d){
   return h;
 }
 
+function folkBodyHTML(d){
+  let h='';
+  const title = (d.city&&d.city!=='Folk Artist') ? esc(d.city)+' — Folk Scenes' : 'Folk Artist — Everyday Scenes';
+  h+=`<div class="kithead"><div class="kc">${title}</div>${d.read?`<div class="kr">${esc(d.read)}</div>`:''}</div>`;
+  if(d.why) h+=`<div class="onlyhere" style="border-color:rgba(255,176,0,.45);border-left-color:var(--amber);background:linear-gradient(180deg,rgba(255,176,0,.09),rgba(255,176,0,.03))"><div class="k" style="color:var(--amber)">Why folk art pulls us in</div><div class="v">${esc(d.why)}</div></div>`;
+  const scenes=(d.scenes||[]).filter(x=>x&&x.n).slice(0,12);
+  if(scenes.length){
+    h+=`<div class="sec a-cyan"><div class="sh"><span class="sn">Scenes to paint</span><span class="sc">the heart · ${scenes.length}</span></div>`;
+    h+=scenes.map(x=>`<div class="item"><div class="nm">${esc(x.n)}</div>${x.d?`<div class="ds">${esc(x.d)}</div>`:''}${x.why?`<div class="ds" style="margin-top:5px"><span style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--cyan)">folk ›</span> <span style="color:var(--muted)">${esc(x.why)}</span></div>`:''}</div>`).join('');
+    h+=`</div>`;
+  }
+  const prin=(d.principles||[]).filter(x=>x&&x.n).slice(0,6);
+  if(prin.length){
+    h+=`<div class="sec a-green"><div class="sh"><span class="sn">Folk-art principles</span><span class="sc">how to make it read as folk</span></div>`;
+    h+=prin.map(x=>`<div class="item"><div class="nm">${esc(x.n)}</div>${x.d?`<div class="ds">${esc(x.d)}</div>`:''}</div>`).join('');
+    h+=`</div>`;
+  }
+  const motifs=(d.motifs||[]).filter(Boolean).slice(0,8);
+  if(motifs.length){
+    h+=`<div class="sec a-magenta"><div class="sh"><span class="sn">Recurring motifs</span><span class="sc">small things to repeat</span></div><div class="plist">${motifs.map(x=>`<div class="pl">${esc(typeof x==='string'?x:(x.n||x.d||''))}</div>`).join('')}</div></div>`;
+  }
+  if(d.render) h+=`<div class="sec a-green"><div class="sh"><span class="sn">How to render it</span></div><div class="noteblk" style="border-left-color:var(--green)"><div class="nv">${esc(d.render)}</div></div></div>`;
+  const pal=(d.palette||[]).filter(x=>x&&x.hex).slice(0,6);
+  if(pal.length){
+    h+=`<div class="sec a-cyan"><div class="sh"><span class="sn">Color inspiration</span><span class="sc">click to copy hex</span></div><div class="swatches">${pal.map(x=>`<div class="sw" data-hex="${esc(x.hex)}"><div class="chip-c" style="background:${esc(x.hex)}"></div><div class="meta"><div class="cn">${esc(x.name||'')}</div><div class="hx">${esc(x.hex)}</div>${x.note?`<div class="nt" style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.3">${esc(x.note)}</div>`:''}</div></div>`).join('')}</div></div>`;
+  }
+  return h;
+}
+
 function bodyHTML(d){
+  if(d.scenes||d.principles) return folkBodyHTML(d);
   if(d.subject||d.visual||d.draw) return objectBodyHTML(d);
   if(d.finds) return deepBodyHTML(d);
   if(d.directions||d.roads||d.title_banner) return mapBodyHTML(d);
@@ -651,7 +709,12 @@ function normalizeData(d){
   d.what=pickKey(d,['what','summary','desc','description']);
   d.story=pickKey(d,['story','history','hook','background']);
   d.draw=pickKey(d,['draw','how_to_draw','illustration','suggestion']);
-  ['title_banner','shape','frame','extras','shapes','patterns','map_route','poster','cover'].forEach(k=>{ if(d[k]!=null&&typeof d[k]!=='string') d[k]=String(d[k]); });
+  if(Array.isArray(d.scenes)) d.scenes=d.scenes.map(x=> typeof x==='string'?{n:x}:{n:pickKey(x,['n','name','title','scene']),d:pickKey(x,['d','desc','description','detail','frame']),why:pickKey(x,['why','folk','note','reason'])});
+  if(Array.isArray(d.principles)) d.principles=d.principles.map(normItem);
+  if(Array.isArray(d.motifs)) d.motifs=d.motifs.map(x=> typeof x==='string'?x:(pickKey(x,['n','name','d','desc','description'])||''));
+  d.why=pickKey(d,['why','why_folk','appeal','pull']);
+  d.render=pickKey(d,['render','how_to_render','technique','style']);
+  ['title_banner','shape','frame','extras','shapes','patterns','map_route','poster','cover','render','why'].forEach(k=>{ if(d[k]!=null&&typeof d[k]!=='string') d[k]=String(d[k]); });
   return d;
 }
 
@@ -696,6 +759,7 @@ async function snapshot(){
     const isMap=!!(d.directions||d.roads||d.title_banner);
     const isDeep=!!d.finds;
     const isObject=!!(d.subject||d.visual||d.draw);
+    const isFolk=!!(d.scenes||d.principles);
     const {jsPDF}=window.jspdf;
     const P=new jsPDF({unit:'pt',format:'letter',compress:true});
     const PW=P.internal.pageSize.getWidth();   // 612
@@ -770,8 +834,8 @@ async function snapshot(){
     setF('mono',9.5,C.cyan); P.text('GF · FIELD INSTRUMENT',M,y); y+=34;
     setF('bold',48,C.white); P.text('CITYSCOPE',M,y); y+=18;
     P.setDrawColor(0,90,108); P.setLineWidth(0.8); P.line(M,y,M+CW,y); y+=30;
-    setF('bold',22,C.white); const cl=P.splitTextToSize(String(d.subject||d.city||lastCity),CW); for(const ln of cl){ P.text(ln,M,y); y+=25; }
-    y+=2; setF('mono',11,C.amber); P.text(isObject?'FIELD FIND':(isDeep?'DEEP FINDS':(isMap?'MAP KIT':'ILLUSTRATION KIT')),M,y); y+=20;
+    setF('bold',22,C.white); const cl=P.splitTextToSize(String(isFolk?((d.city&&d.city!=='Folk Artist')?d.city+' — Folk Scenes':'Folk Artist'):(d.subject||d.city||lastCity)),CW); for(const ln of cl){ P.text(ln,M,y); y+=25; }
+    y+=2; setF('mono',11,C.amber); P.text(isFolk?'FOLK SCENES':(isObject?'FIELD FIND':(isDeep?'DEEP FINDS':(isMap?'MAP KIT':'ILLUSTRATION KIT'))),M,y); y+=20;
     setF('mono',8.5,C.muted); P.text(String(prettyStamp()).toUpperCase(),M,y); y+=28;
     if(d.read){ para(d.read,M,11.5,'normal',C.text,CW-30,16); }
     if(d.only_here){
@@ -785,7 +849,55 @@ async function snapshot(){
 
     // ---------- BODY ----------
     nl();
-    if(isObject){
+    if(isFolk){
+      if(d.why){ setF('normal',11,C.white); const wL=P.splitTextToSize(String(d.why),CW-32); const boxH=18+16+wL.length*15+14; need(boxH);
+        P.setFillColor(22,16,4); P.rect(M,y,CW,boxH,'F'); P.setFillColor.apply(P,C.amber); P.rect(M,y,3,boxH,'F');
+        let by=y+20; setF('mono',8.5,C.amber); P.text('WHY FOLK ART PULLS US IN',M+16,by); by+=18;
+        setF('normal',11,C.white); for(const ln of wL){ P.text(ln,M+16,by); by+=15; } y+=boxH+8; }
+      const scenes=(d.scenes||[]).filter(x=>x&&x.n).slice(0,12);
+      if(scenes.length){ sectionHead('Scenes to paint','the heart · '+scenes.length,C.cyan);
+        scenes.forEach(it=>{ const padX=12,padT=10,padB=10;
+          setF('bold',10.5,C.white); const tL=P.splitTextToSize(String(it.n||''),CW-2*padX);
+          setF('normal',9.3,C.text); const dL=it.d?P.splitTextToSize(String(it.d),CW-2*padX):[];
+          const wL2=it.why?P.splitTextToSize('folk \u203A '+String(it.why),CW-2*padX):[];
+          const cardH=padT+tL.length*13+(dL.length?dL.length*12.2+3:0)+(wL2.length?wL2.length*11+4:0)+padB;
+          need(cardH); P.setFillColor.apply(P,C.panel); P.rect(M,y,CW,cardH,'F'); P.setFillColor.apply(P,C.cyan); P.rect(M,y,3,cardH,'F');
+          let ty=y+padT; setF('bold',10.5,C.white); for(const ln of tL){ P.text(ln,M+padX,ty+8.6); ty+=13; }
+          if(dL.length){ ty+=3; setF('normal',9.3,C.text); for(const ln of dL){ P.text(ln,M+padX,ty+8); ty+=12.2; } }
+          if(wL2.length){ ty+=4; setF('mono',8,C.cyan); for(const ln of wL2){ P.text(ln,M+padX,ty+7); ty+=11; } }
+          y+=cardH+8; }); }
+      const prin=(d.principles||[]).filter(x=>x&&x.n).slice(0,6);
+      if(prin.length){ sectionHead('Folk-art principles','how to make it read as folk',C.green);
+        prin.forEach(it=>{ const padX=12,padT=9,padB=9;
+          setF('bold',10.5,C.white); const tL=P.splitTextToSize(String(it.n||''),CW-2*padX);
+          setF('normal',9.3,C.text); const dL=it.d?P.splitTextToSize(String(it.d),CW-2*padX):[];
+          const cardH=padT+tL.length*13+(dL.length?dL.length*12.2+2:0)+padB; need(cardH);
+          P.setFillColor.apply(P,C.panel); P.rect(M,y,CW,cardH,'F'); P.setFillColor.apply(P,C.green); P.rect(M,y,3,cardH,'F');
+          let ty=y+padT; setF('bold',10.5,C.white); for(const ln of tL){ P.text(ln,M+padX,ty+8.6); ty+=13; }
+          if(dL.length){ ty+=2; setF('normal',9.3,C.text); for(const ln of dL){ P.text(ln,M+padX,ty+8); ty+=12.2; } }
+          y+=cardH+8; }); }
+      const motifs=(d.motifs||[]).filter(Boolean).slice(0,8);
+      if(motifs.length){ sectionHead('Recurring motifs','small things to repeat',C.magenta);
+        motifs.forEach(v=>{ const t=typeof v==='string'?v:(v.n||v.d||''); setF('normal',10,C.text); const lines=P.splitTextToSize('\u2022  '+String(t),CW-6); const step=13.4;
+          for(let i=0;i<lines.length;i++){ need(step); P.text(lines[i],M,y+8); y+=step; } y+=3; }); }
+      if(d.render){ sectionHead('How to render it','',C.green); para(d.render,M,10.5,'normal',C.text,CW,14.6); y+=4; }
+      const pal=(d.palette||[]).filter(x=>x&&x.hex).slice(0,6);
+      if(pal.length){ sectionHead('Color inspiration','',C.cyan);
+        const per=3, gap=10, sw=(CW-gap*(per-1))/per;
+        for(let i=0;i<pal.length;i+=per){ const row=pal.slice(i,i+per); const cells=[]; let rowH=0;
+          row.forEach(x=>{ setF('bold',8.6,C.white); const nmL=P.splitTextToSize(String(x.name||''),sw-6).slice(0,2);
+            setF('normal',7.4,C.muted); const ntL=x.note?P.splitTextToSize(String(x.note),sw-6).slice(0,3):[];
+            const h=22+4+nmL.length*10+10+(ntL.length?ntL.length*8.4+2:0)+6; cells.push({x,nmL,ntL,h}); rowH=Math.max(rowH,h); });
+          need(rowH+8);
+          row.forEach((x,j)=>{ const cx=M+j*(sw+gap); const cell=cells[j];
+            const rgb=hexRGB(x.hex)||[40,40,40]; P.setFillColor(rgb[0],rgb[1],rgb[2]); P.rect(cx,y,sw,22,'F');
+            let cy=y+22+4; setF('bold',8.6,C.white); for(const ln of cell.nmL){ P.text(ln,cx,cy+7); cy+=10; }
+            setF('mono',8,C.muted); P.text(String(x.hex),cx,cy+6); cy+=12;
+            if(cell.ntL.length){ setF('normal',7.4,C.muted); for(const ln of cell.ntL){ P.text(ln,cx,cy+6); cy+=8.4; } }
+          }); y+=rowH+8;
+        }
+      }
+    } else if(isObject){
       if(d.story){ setF('normal',11,C.white); const sL=P.splitTextToSize(String(d.story),CW-32); const boxH=18+16+sL.length*15+14; need(boxH);
         P.setFillColor(22,16,4); P.rect(M,y,CW,boxH,'F'); P.setFillColor.apply(P,C.amber); P.rect(M,y,3,boxH,'F');
         let by=y+20; setF('mono',8.5,C.amber); P.text('THE STORY',M+16,by); by+=18;
@@ -1003,10 +1115,14 @@ function handleFile(f){
   reader.readAsDataURL(f);
 }
 function syncMode(){
-  const obj = depthEl.value==='object';
+  const m = depthEl.value;
+  const obj = m==='object';
+  const folk = m==='folk';
   $('uprow').style.display = obj?'flex':'none';
-  cityEl.placeholder = obj ? 'e.g. the Big Chicken, Marietta GA — or just add a photo' : 'e.g. Snellville, Georgia';
-  goEl.textContent = obj ? 'Scan it' : 'Scope the city';
+  cityEl.placeholder = obj ? 'e.g. the Big Chicken, Marietta GA — or just add a photo'
+    : folk ? 'optional — a place to tint the scenes, or leave blank'
+    : 'e.g. Snellville, Georgia';
+  goEl.textContent = obj ? 'Scan it' : folk ? 'Compose scenes' : 'Scope the city';
   if(!obj) clearImage();
 }
 
