@@ -385,7 +385,7 @@ CAPS: visual 3-6, facts 2-5, palette 3-5, verify 2-4. Tight and fast.`;
 
 const FOLK_INSTRUCTION = `You are CITYSCOPE in FOLK ARTIST mode — a creative-brief companion for a folk artist who finds the extraordinary in ordinary modern American life. This is NOT about imitating traditional folk-art SUBJECTS (no barns, weathervanes, eagles, or antique-quilt clichés). It is about applying the folk-art WAY OF SEEING to everyday contemporary scenes: a kitchen table after breakfast, a gas station at dusk, a backyard chair, a motel sign, a roadside fruit stand, a high-school track, a parking lot, a porch, the grocery-cart return. The reverent attention folk art paid to daily life, turned on the daily life we actually live now.
 
-You do NOT need web search — draw on what you know about folk art and about ordinary American places. If a place is given, TINT the scenes toward that place's specific ordinary life (its light, its plants, its kind of gas station); if no place is given, keep them universal American-ordinary.
+You do NOT need web search — draw on what you know about folk art and about ordinary American places. If a place is given, TINT the scenes toward that place's ordinary life — but keep the tint ATMOSPHERIC only: its light, weather, seasons, vegetation, terrain, and the general texture of everyday places there (the kind of gas station, the kind of porch). Do NOT assert specific named businesses, streets, people, festivals, or cultural/demographic claims about the place unless they are genuinely well-known landmarks — when unsure, stay general rather than inventing a specific, and never carry a neighboring city's or the region's trait onto this one. A wrong atmospheric tint is harmless; a made-up specific is not. If no place is given, keep the scenes universal American-ordinary.
 
 WHAT TO DELIVER:
 - A short, warm framing of the folk-art lens applied to modern ordinary life (the "read").
@@ -430,7 +430,7 @@ async function run(){
     else { task += `\n\n${isObject?'SUBJECT':'CITY'}: ${city || (isObject?'(identify from the attached photo)':'')}`; }
     let content = task;
     if(isObject && imageData) content=[{type:'image',source:{type:'base64',media_type:mediaType,data:imageData}},{type:'text',text:task}];
-    const body={ model:MODEL, max_tokens: (deep||isObject||isFolk)?3000:(lite?900:5000), messages:[{role:'user',content}] };
+    const body={ model:MODEL, max_tokens: isFolk?6000:((deep||isObject)?3000:(lite?900:5000)), messages:[{role:'user',content}] };
     if(!lite && !isFolk) body.tools=[{type:'web_search_20250305',name:'web_search',max_uses:5}];
     const res=await fetch(WORKER,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!res.ok) throw new Error('Worker returned '+res.status);
@@ -447,9 +447,33 @@ async function run(){
 
 function parseJSON(raw){
   let s=raw.replace(/```json/gi,'').replace(/```/g,'').trim();
-  const a=s.indexOf('{'), b=s.lastIndexOf('}');
-  if(a===-1||b===-1) return null;
-  try{ return JSON.parse(s.slice(a,b+1)); }catch{ return null; }
+  const a=s.indexOf('{');
+  if(a===-1) return null;
+  s=s.slice(a);
+  const tryParse=t=>{ try{ return JSON.parse(t); }catch{ return null; } };
+  // 1) strict: first { to last }
+  const b=s.lastIndexOf('}');
+  if(b!==-1){ const strict=tryParse(s.slice(0,b+1)); if(strict) return strict; }
+  // 2) recovery for truncated JSON: cut at the last completed element, then close open brackets
+  let inStr=false, esc=false, lastSafe=-1;
+  for(let i=0;i<s.length;i++){ const c=s[i];
+    if(inStr){ if(esc)esc=false; else if(c==='\\')esc=true; else if(c==='"')inStr=false; continue; }
+    if(c==='"'){ inStr=true; continue; }
+    if(c==='}'||c===']') lastSafe=i;
+  }
+  if(lastSafe!==-1){
+    let st=[], is=false, es=false;
+    for(let i=0;i<=lastSafe;i++){ const c=s[i];
+      if(is){ if(es)es=false; else if(c==='\\')es=true; else if(c==='"')is=false; continue; }
+      if(c==='"'){ is=true; continue; }
+      if(c==='{'||c==='[') st.push(c==='{'?'}':']');
+      else if(c==='}'||c===']'){ if(st.length) st.pop(); }
+    }
+    let cand=s.slice(0,lastSafe+1).replace(/,\s*$/,'');
+    for(let k=st.length-1;k>=0;k--) cand+=st[k];
+    const rec=tryParse(cand); if(rec) return rec;
+  }
+  return null;
 }
 function esc(t){const d=document.createElement('div');d.textContent=t==null?'':t;return d.innerHTML;}
 function num(x){x=parseInt(x,10);return isNaN(x)?0:Math.max(0,Math.min(5,x));}
